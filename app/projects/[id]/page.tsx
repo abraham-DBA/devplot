@@ -185,12 +185,14 @@ export default async function ProjectDetailPage({
             </p>
           </div>
 
-          <Link
-            href={`/projects/${id}/modules/new`}
-            className="shrink-0 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
-          >
-            + Add module
-          </Link>
+          {["team_lead", "project_manager"].includes(currentUser.role ?? "") && (
+            <Link
+              href={`/projects/${id}/modules/new`}
+              className="shrink-0 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
+            >
+              + Add module
+            </Link>
+          )}
         </div>
 
         {/* Schedule alert */}

@@ -95,7 +95,7 @@ export default async function ProjectsPage() {
       <Navbar userName={currentUser.name} userRole={currentUser.role ?? "developer"} />
 
       <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-6 lg:px-8">
-        <ProjectsClient projects={projectRows} totalModules={totalModules} />
+        <ProjectsClient projects={projectRows} totalModules={totalModules} userRole={currentUser.role ?? "developer"} />
       </main>
     </div>
   );

@@ -314,12 +314,14 @@ export default async function DashboardPage() {
             >
               View projects
             </Link>
-            <Link
-              href="/projects/new"
-              className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-card transition-colors hover:bg-brand-primary"
-            >
-              + New project
-            </Link>
+            {currentUser.role === "project_manager" && (
+              <Link
+                href="/projects/new"
+                className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-card transition-colors hover:bg-brand-primary"
+              >
+                + New project
+              </Link>
+            )}
           </div>
         </div>
 
@@ -381,10 +383,12 @@ export default async function DashboardPage() {
 
           {projectCards.length === 0 ? (
             <div className="mt-4 flex h-32 items-center justify-center rounded-xl border border-dashed border-border">
-              <p className="text-sm text-muted-foreground">No projects yet —{" "}
-                <Link href="/projects/new" className="text-foreground underline underline-offset-2">
-                  create one
-                </Link>
+              <p className="text-sm text-muted-foreground">
+                {currentUser.role === "project_manager" ? (
+                  <>No projects yet — <Link href="/projects/new" className="text-foreground underline underline-offset-2">create one</Link></>
+                ) : (
+                  "No projects yet."
+                )}
               </p>
             </div>
           ) : (

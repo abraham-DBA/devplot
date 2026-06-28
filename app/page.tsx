@@ -60,13 +60,10 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       {/* ── Header ── */}
-      <header className="border-b border-border bg-card">
+      <header className="sticky top-0 z-50 border-b border-border bg-card/85 backdrop-blur-md">
         <div className="mx-auto flex h-15 w-full max-w-[1280px] items-center justify-between px-4 sm:px-6 lg:px-12">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="DevFlow home">
-            <span className="flex size-8 items-center justify-center rounded-md bg-foreground text-[10px] font-bold text-card">
-              DF
-            </span>
-            <span className="text-[15px] font-bold text-foreground">DevFlow</span>
+          <Link href="/" className="flex items-center" aria-label="DevFlow home">
+            <img src="/logo.png" alt="DevFlow" className="h-6 w-auto" />
           </Link>
 
           <nav className="hidden items-center gap-9 text-sm font-medium text-muted-foreground md:flex">

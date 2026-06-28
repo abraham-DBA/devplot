@@ -214,14 +214,16 @@ export default async function ModuleDetailPage({
                     ← Back to project
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    href={`/projects/${id}/modules/new`}
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    + Add another module
-                  </Link>
-                </li>
+                {["team_lead", "project_manager"].includes(currentUser.role ?? "") && (
+                  <li>
+                    <Link
+                      href={`/projects/${id}/modules/new`}
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      + Add another module
+                    </Link>
+                  </li>
+                )}
               </ul>
             </div>
 

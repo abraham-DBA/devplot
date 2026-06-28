@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 
 type NavbarProps = {
   userName: string;
@@ -33,7 +34,28 @@ function formatRole(role: string): string {
 
 export function Navbar({ userName, userRole }: NavbarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setAvatarOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await authClient.signOut();
+    router.push("/login");
+  }
 
   return (
     <header className="w-full border-b border-border bg-card">
@@ -69,14 +91,51 @@ export function Navbar({ userName, userRole }: NavbarProps) {
           })}
         </nav>
 
-        {/* Right — Role + avatar + mobile toggle */}
+        {/* Right — Role + avatar dropdown + mobile toggle */}
         <div className="flex flex-1 items-center justify-end gap-3">
           <span className="hidden text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:block">
             {formatRole(userRole)}
           </span>
-          <div className="flex size-8 items-center justify-center rounded-full bg-foreground text-[11px] font-bold text-card">
-            {getInitials(userName)}
+
+          {/* Avatar — click to open sign-out dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setAvatarOpen((o) => !o)}
+              aria-label="Account menu"
+              aria-expanded={avatarOpen}
+              className="flex size-8 items-center justify-center rounded-full bg-foreground text-[11px] font-bold text-card focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-2"
+            >
+              {getInitials(userName)}
+            </button>
+
+            {avatarOpen && (
+              <div className="absolute right-0 top-10 z-50 w-44 rounded-xl border border-border bg-card shadow-lg">
+                <div className="border-b border-border px-4 py-3">
+                  <p className="truncate text-sm font-semibold text-foreground">{userName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{formatRole(userRole)}</p>
+                </div>
+                <div className="p-1.5">
+                  <Link
+                    href="/profile"
+                    onClick={() => setAvatarOpen(false)}
+                    className="block rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-background"
+                  >
+                    Profile &amp; settings
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    className="w-full rounded-lg px-3 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive-light disabled:opacity-50"
+                  >
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
           {/* Hamburger — mobile only */}
           <button
             type="button"
@@ -124,6 +183,16 @@ export function Navbar({ userName, userRole }: NavbarProps) {
                 </li>
               );
             })}
+            <li className="mt-1 border-t border-border pt-1">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive-light disabled:opacity-50"
+              >
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
+            </li>
           </ul>
         </nav>
       )}

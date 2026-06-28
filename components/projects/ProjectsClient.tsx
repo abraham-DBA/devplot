@@ -121,9 +121,10 @@ function ProjectCard({ project }: { project: ProjectRow }) {
 type Props = {
   projects: ProjectRow[];
   totalModules: number;
+  userRole: string;
 };
 
-export function ProjectsClient({ projects, totalModules }: Props) {
+export function ProjectsClient({ projects, totalModules, userRole }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -160,12 +161,14 @@ export function ProjectsClient({ projects, totalModules }: Props) {
             {projects.length} project{projects.length !== 1 ? "s" : ""} · {totalModules} module{totalModules !== 1 ? "s" : ""}
           </p>
         </div>
-        <Link
-          href="/projects/new"
-          className="rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
-        >
-          + New project
-        </Link>
+        {userRole === "project_manager" && (
+          <Link
+            href="/projects/new"
+            className="rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
+          >
+            + New project
+          </Link>
+        )}
       </div>
 
       {/* Search + filter row */}

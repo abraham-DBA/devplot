@@ -49,6 +49,8 @@ export async function createModule(
 ): Promise<{ success: boolean; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (!["team_lead", "project_manager"].includes(session.user.role ?? ""))
+    return { success: false, error: "Only team leads and project managers can create modules." };
 
   const { projectId, name, description, assignedDeveloperId, deadline, status, progress } = input;
 

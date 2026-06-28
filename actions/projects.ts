@@ -24,6 +24,8 @@ export async function createProject(
 ): Promise<{ success: boolean; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (session.user.role !== "project_manager")
+    return { success: false, error: "Only project managers can create projects." };
 
   const { name, description, startDate, endDate, priority, teamMembers } = input;
 
