@@ -246,6 +246,11 @@ Approved dependencies for this project:
 - `tailwindcss` — styling
 - `shadcn/ui` components — UI primitives
 - `zod` — Zod schema validation
+- `sonner` — toast notifications
+- `vitest` — unit test runner (dev dependency)
+- `@vitejs/plugin-react` — vitest React support (dev dependency)
+- `@vitest/coverage-v8` — vitest coverage reporter (dev dependency)
+- `playwright` — E2E test runner (dev dependency)
 
 Do not install any other packages without updating this list first.
 

@@ -130,10 +130,62 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground antialiased font-sans;
   }
+
   html {
     @apply font-sans;
+  }
+
+  /* Range slider — scoped to .devflow-slider to avoid conflicting with shadcn Slider */
+  .devflow-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+
+  .devflow-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: var(--foreground);
+    cursor: pointer;
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .devflow-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: var(--foreground);
+    cursor: pointer;
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .devflow-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .devflow-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--border);
+  }
+
+  .devflow-slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }

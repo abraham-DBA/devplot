@@ -1,31 +1,22 @@
 import Link from "next/link";
-import { Code2 } from "lucide-react";
+import { type ReactNode } from "react";
 
-type AuthField = {
-  label: string;
-  name: string;
-  type: "email" | "password" | "text";
-  placeholder: string;
-};
-
-type AuthShellProps = {
+interface AuthShellProps {
   title: string;
   subtitle: string;
-  fields: readonly AuthField[];
-  submitLabel: string;
   footerText: string;
   footerHref: string;
   footerLinkLabel: string;
-};
+  children: ReactNode;
+}
 
 export function AuthShell({
   title,
   subtitle,
-  fields,
-  submitLabel,
   footerText,
   footerHref,
   footerLinkLabel,
+  children,
 }: AuthShellProps) {
   return (
     <main className="grid h-screen overflow-hidden bg-card text-foreground lg:grid-cols-2">
@@ -38,7 +29,7 @@ export function AuthShell({
         </Link>
 
         <div className="max-w-[520px]">
-          <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-secondary">
+          <p className="font-mono text-xs font-semibold uppercase text-brand-secondary">
             From the team
           </p>
           <blockquote className="mt-5 text-xl font-bold leading-[1.3] text-card lg:text-[26px]">
@@ -60,49 +51,7 @@ export function AuthShell({
             <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>
           </header>
 
-          <div className="mt-6 grid gap-2">
-            <button
-              type="button"
-              className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-border bg-card text-sm font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <span className="font-mono text-sm font-bold">G</span>
-              Continue with Google
-            </button>
-            <button
-              type="button"
-              className="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-border bg-card text-sm font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <Code2 className="size-5" aria-hidden="true" />
-              Continue with GitHub
-            </button>
-          </div>
-
-          <div className="my-5 flex items-center gap-4">
-            <div className="h-px flex-1 bg-border" />
-            <span className="font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground">Or email</span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <form method="post" className="grid gap-4">
-            {fields.map((field) => (
-              <label key={field.name} className="grid gap-1.5">
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-wide text-foreground">{field.label}</span>
-                <input
-                  name={field.name}
-                  type={field.type}
-                  placeholder={field.placeholder}
-                  className="h-10 rounded-lg border border-border bg-card px-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
-                />
-              </label>
-            ))}
-
-            <button
-              type="submit"
-              className="mt-1 h-11 rounded-lg bg-foreground text-sm font-bold text-card transition-colors hover:bg-brand-primary"
-            >
-              {submitLabel}
-            </button>
-          </form>
+          {children}
 
           <p className="mt-5 text-center text-sm leading-6 text-muted-foreground">
             {footerText}{" "}

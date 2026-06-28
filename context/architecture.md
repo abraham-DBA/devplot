@@ -42,6 +42,8 @@
 │   └── dashboard/                     → Specific dashboard sub-components
 ├── lib/
 │   ├── utils.ts                       → Utility helpers
+│   ├── health.ts                      → Pure functions: calculateProjectHealth, calculateProjectProgress
+│   ├── auth-types.ts                  → Inferred session/user types from auth.$Infer (no DB import)
 ```
 
 ---
