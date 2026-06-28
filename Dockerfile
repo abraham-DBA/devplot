@@ -17,9 +17,7 @@ COPY . .
 # Build args are injected at build time for Next.js NEXT_PUBLIC_* vars only.
 # Server-side secrets (DATABASE_URL, BETTER_AUTH_SECRET, etc.) are never
 # baked into the image — they are provided at runtime via --env-file.
-ARG NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_TELEMETRY_DISABLED=$NEXT_TELEMETRY_DISABLED
-
+ENV DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
 RUN npm run build
 
 # ── Stage 3: runner ───────────────────────────────────────────────────────────
