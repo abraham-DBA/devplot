@@ -4,6 +4,14 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createModule } from "@/actions/modules";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked";
 
@@ -37,7 +45,10 @@ export function CreateModuleForm({
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [ownerId, setOwnerId] = useState(currentUserId);
+  const [ownerId, setOwnerId] = useState(() => {
+    const hasCurrentUser = developers.some((d) => d.id === currentUserId);
+    return hasCurrentUser ? currentUserId : (developers[0]?.id || "");
+  });
   const [deadline, setDeadline] = useState(defaultDeadline);
   const [status, setStatus] = useState<ModuleStatus>("not_started");
   const [progress, setProgress] = useState(0);
@@ -101,18 +112,22 @@ export function CreateModuleForm({
             <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Owner
             </label>
-            <select
+            <Select
               value={ownerId}
-              onChange={(e) => setOwnerId(e.target.value)}
+              onValueChange={setOwnerId}
               disabled={isPending}
-              className="mt-2 h-12 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary disabled:opacity-50"
             >
-              {developers.map((dev) => (
-                <option key={dev.id} value={dev.id}>
-                  {dev.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="mt-2 h-12 w-full border-border bg-card text-foreground text-sm rounded-lg px-4 justify-between">
+                <SelectValue placeholder="Select developer" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {developers.map((dev) => (
+                  <SelectItem key={dev.id} value={dev.id}>
+                    {dev.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -166,15 +181,13 @@ export function CreateModuleForm({
               {progress}%
             </span>
           </div>
-          <input
-            type="range"
-            min={0}
+          <Slider
+            value={[progress]}
+            onValueChange={(val) => setProgress(val[0])}
             max={100}
             step={1}
-            value={progress}
-            onChange={(e) => setProgress(Number(e.target.value))}
             disabled={isPending}
-            className="devflow-slider mt-3 w-full"
+            className="mt-3 w-full"
           />
         </div>
       </div>

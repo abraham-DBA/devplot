@@ -4,6 +4,14 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateModuleProgress, addNote } from "@/actions/modules";
 import type { NoteEntry } from "@/actions/modules";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked" | "completed";
 
@@ -200,26 +208,30 @@ export function ModuleDetailClient({
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <input
-            type="range"
-            min={0}
+          <Slider
+            value={[progress]}
+            onValueChange={(val) => setProgress(val[0])}
             max={100}
             step={1}
-            value={progress}
-            onChange={(e) => setProgress(Number(e.target.value))}
             disabled={isSaving}
-            className="devflow-slider flex-1"
+            className="flex-1"
           />
-          <select
+          <Select
             value={status}
-            onChange={(e) => setStatus(e.target.value as ModuleStatus)}
+            onValueChange={(val) => setStatus(val as ModuleStatus)}
             disabled={isSaving}
-            className="h-9 rounded-lg border border-border bg-card px-2 text-sm text-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary disabled:opacity-50"
           >
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
+            <SelectTrigger className="h-9 w-[130px] border-border bg-card text-foreground">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <button
             type="button"
             onClick={handleSave}

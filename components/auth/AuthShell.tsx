@@ -21,11 +21,8 @@ export function AuthShell({
   return (
     <main className="grid h-screen overflow-hidden bg-card text-foreground lg:grid-cols-2">
       <section className="hidden flex-col justify-between bg-foreground px-6 py-8 text-card sm:px-10 lg:flex lg:px-14 lg:py-10">
-        <Link href="/" className="flex items-center gap-2.5" aria-label="DevFlow home">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-card text-[11px] font-bold text-foreground">
-            DF
-          </span>
-          <span className="text-lg font-bold leading-7 text-card">DevFlow</span>
+        <Link href="/" className="flex items-center" aria-label="DevFlow home">
+          <img src="/logo-light.png" alt="DevFlow" className="h-6 w-auto" />
         </Link>
 
         <div className="max-w-[520px]">
@@ -47,6 +44,9 @@ export function AuthShell({
       <section className="flex h-screen items-center justify-center overflow-y-auto bg-card px-6 py-8 sm:px-10 lg:px-14">
         <div className="w-full max-w-[400px]">
           <header>
+            <Link href="/" className="inline-flex items-center mb-6 lg:hidden" aria-label="DevFlow home">
+              <img src="/logo.png" alt="DevFlow" className="h-6 w-auto" />
+            </Link>
             <h1 className="text-2xl font-bold leading-tight text-foreground">{title}</h1>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">{subtitle}</p>
           </header>

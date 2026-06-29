@@ -62,11 +62,8 @@ export function Navbar({ userName, userRole }: NavbarProps) {
       <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-6">
         {/* Left — Logo */}
         <div className="flex flex-1 justify-start">
-          <Link href="/dashboard" className="flex items-center gap-2.5" aria-label="DevFlow home">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-[10px] font-bold text-card">
-              DF
-            </span>
-            <span className="text-base font-bold text-foreground">DevFlow</span>
+          <Link href="/dashboard" className="flex items-center" aria-label="DevFlow home">
+            <img src="/logo.png" alt="DevFlow" className="h-6 w-auto" />
           </Link>
         </div>
 
