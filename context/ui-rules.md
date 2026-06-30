@@ -55,6 +55,17 @@ Never use colored card backgrounds — always white. Color goes inside cards via
 
 ## Typography Hierarchy
 
+**Page eyebrow** — small uppercase label directly above a page `<h1>`
+```
+font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground
+```
+
+**Stat card label** — uppercase label inside a stat card, above the big number
+```
+font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground
+```
+These are deliberately different sizes from each other (10px vs 11px) — don't merge them. Within each category, every page must match exactly; this was a real drift found and fixed (Dashboard/Projects-list eyebrows were `text-xs` before being standardized to `text-[10px]`).
+
 Three levels used consistently throughout:
 
 **Section headings** — card titles, page section titles

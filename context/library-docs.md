@@ -10,28 +10,59 @@ We use Drizzle ORM with the `node-postgres` driver (`pg`) for SQL query construc
 
 ### Schema definition
 
-Define all database tables, columns, relations, and type helpers inside `lib/schema.ts`:
+Define all database tables, columns, relations, and type helpers inside `lib/schema.ts`. There is no separate `profiles` table — Better Auth owns the `user` table directly, and custom fields (`role`, `onboardingCompleted`, `organizationId`) are added via `additionalFields` in `lib/auth.ts` (see section 2 below), then declared here so Drizzle knows about them:
 
 ```typescript
 // lib/schema.ts
-import { pgTable, text, integer, date, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, date, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
-export const profiles = pgTable("profiles", {
-  id: text("id").primaryKey(), // references Better Auth user
-  fullName: text("full_name").notNull(),
+// Better Auth core table — custom fields declared here must match additionalFields in lib/auth.ts
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  role: text("role").$type<"developer" | "team_lead" | "project_manager">().default("developer").notNull(),
+  emailVerified: boolean("email_verified").notNull(),
+  role: text("role").default("developer"), // "owner" | "developer" | "team_lead" | "project_manager"
+  onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
+  organizationId: text("organization_id"), // nullable until onboarding completes
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+// One row per tenant/workspace
+export const organizations = pgTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  industry: text("industry").notNull(),
+  size: text("size").$type<"1-10" | "11-50" | "51-200" | "201-500" | "500+">().notNull(),
+  ownerId: text("owner_id").references(() => user.id, { onDelete: "restrict" }).notNull(),
+  inviteCode: text("invite_code").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Join table — unique index prevents a user joining the same org twice
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }).notNull(),
+    role: text("role").$type<"owner" | "developer" | "team_lead" | "project_manager">().notNull(),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("org_member_unique_idx").on(table.organizationId, table.userId)],
+);
+
 export const projects = pgTable("projects", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description").notNull(),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
-  priority: text("priority").$type<"low" | "medium" | "high">().default("medium").notNull(),
+  priority: text("priority").$type<"low" | "medium" | "high" | "critical">().default("medium").notNull(),
   progress: integer("progress").default(0).notNull(),
   health: text("health").$type<"on_track" | "at_risk" | "high_risk">().default("on_track").notNull(),
   teamMembers: jsonb("team_members").$type<string[]>().default([]).notNull(),
@@ -43,7 +74,7 @@ export const modules = pgTable("modules", {
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description").notNull(),
-  assignedDeveloperId: text("assigned_developer_id").references(() => profiles.id).notNull(),
+  assignedDeveloperId: text("assigned_developer_id").references(() => user.id).notNull(),
   progress: integer("progress").default(0).notNull(),
   status: text("status").$type<"not_started" | "in_progress" | "review" | "completed" | "blocked">().default("not_started").notNull(),
   deadline: date("deadline").notNull(),
@@ -54,7 +85,7 @@ export const modules = pgTable("modules", {
 export const blockerLogs = pgTable("blocker_logs", {
   id: text("id").primaryKey(),
   moduleId: text("module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
-  reportedBy: text("reported_by").references(() => profiles.id).notNull(),
+  reportedBy: text("reported_by").references(() => user.id).notNull(),
   description: text("description").notNull(),
   resolved: boolean("resolved").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -62,10 +93,25 @@ export const blockerLogs = pgTable("blocker_logs", {
 
 export const activityLogs = pgTable("activity_logs", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   message: text("message").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+```
+
+**Org-scoped query pattern** — every query against `projects`, `modules` (via project join), `blockerLogs` (via module→project join), or `activityLogs` must filter by the session's `organizationId`:
+
+```typescript
+import { and, eq } from "drizzle-orm";
+
+const orgId = session.user.organizationId;
+if (!orgId) redirect("/onboarding");
+
+const orgProjects = await db
+  .select()
+  .from(projects)
+  .where(eq(projects.organizationId, orgId));
 ```
 
 ### Client connection setup
@@ -160,16 +206,60 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
   },
-  // Custom user fields
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google", "github"],
+      // requireLocalEmailVerified stays at its DEFAULT (true). This app has no
+      // email-verification flow, so disabling it would let anyone sign up with
+      // an unverified email/password account using someone else's email and
+      // have it silently auto-link the next time that person uses Google/
+      // GitHub — granting the original password access to their account.
+      // Linking only ever happens via the explicit, already-authenticated
+      // linkSocial() flow below — never automatically on a bare email match.
+    },
+  },
+  // Custom user fields — must also be declared as real columns on the `user`
+  // table in lib/schema.ts (see section 1 above)
   user: {
     additionalFields: {
       role: {
         type: "string",
         defaultValue: "developer",
       },
+      onboardingCompleted: {
+        type: "boolean",
+        defaultValue: false,
+      },
+      organizationId: {
+        type: "string",
+        required: false,
+      },
     },
   },
 });
+```
+
+### Linking and unlinking accounts (client)
+
+Never rely on Better Auth auto-linking a new OAuth provider onto an existing account by email match alone — that requires either a real email-verification flow or it becomes an account-takeover vector (see the `accountLinking` comment above). Instead, link explicitly from an already-authenticated session:
+
+```tsx
+"use client";
+import { authClient } from "@/lib/auth-client";
+
+// Connect — redirects through the OAuth flow, returns to callbackURL once linked
+async function handleConnect(provider: "google" | "github") {
+  await authClient.linkSocial({ provider, callbackURL: "/profile" });
+}
+
+// Disconnect — Better Auth refuses to unlink the user's last remaining auth method
+async function handleDisconnect(provider: "google" | "github") {
+  const { error } = await authClient.unlinkAccount({ providerId: provider });
+  if (error) {
+    // surface error.message — e.g. "cannot unlink last account"
+  }
+}
 ```
 
 ### API handler route
@@ -211,8 +301,11 @@ export async function checkSession() {
 // lib/auth-client.ts
 import { createAuthClient } from "better-auth/react";
 
+// NEXT_PUBLIC_APP_URL is baked in at build time and can be wrong/empty if a
+// Docker build forgets the build arg — window.location.origin is always
+// correct at runtime in the browser, so it's the fallback, not a hardcoded URL.
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  baseURL: process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : undefined),
 });
 ```
 
@@ -275,3 +368,22 @@ export default function PerformanceChart() {
   );
 }
 ```
+
+---
+
+## 4. Next.js `headers()` — Deriving the Request Origin (Server Components)
+
+`NEXT_PUBLIC_*` env vars are inlined into the client bundle at **build time**. Any link generated in a **Server Component** that needs the app's public origin (e.g. the team invite link) should not depend on that env var — a forgotten Docker build arg silently bakes it in as `""`, producing domain-less links. Server Components run per-request and already have `headers()` available, so derive the origin live instead:
+
+```typescript
+// lib/get-request-origin.ts
+import { getRequestOrigin } from "@/lib/get-request-origin";
+
+export default async function SomePage() {
+  const origin = await getRequestOrigin(); // "https://devflowlab.tech" or "http://localhost:3000"
+  const shareableLink = `${origin}/join/${code}`;
+  // ...
+}
+```
+
+`x-forwarded-host`/`x-forwarded-proto` are only honored when `TRUST_PROXY_HEADERS=true` is set (production, behind a reverse proxy/CDN) — otherwise they're attacker-settable on a direct request and are ignored in favor of the raw `Host` header, matching Better Auth's own `trustedProxyHeaders` gate.

@@ -205,13 +205,15 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | --- | --- | --- |
 | `DATABASE_URL` | lib/db.ts | PostgreSQL database connection string |
 | `BETTER_AUTH_SECRET` | lib/auth.ts | Better Auth security cryptographic key |
-| `NEXT_PUBLIC_APP_URL` | lib/auth-client.ts | Client application base URL |
+| `BETTER_AUTH_URL` | lib/auth.ts (read internally by Better Auth) | Server-side base URL — drives OAuth `redirect_uri` construction. Must include `://` (a missing `//` after the scheme silently passes Better Auth's own URL validation but still produces a malformed `redirect_uri` — see `context/library-docs.md` §2 history) |
+| `NEXT_PUBLIC_APP_URL` | lib/auth-client.ts | Client application base URL — **baked in at Docker build time**, not read at runtime. Falls back to `window.location.origin` if unset/empty |
+| `TRUST_PROXY_HEADERS` | lib/get-request-origin.ts | Set to `"true"` only when a reverse proxy/CDN terminates TLS in front of the app — gates whether `x-forwarded-host`/`x-forwarded-proto` are honored for server-rendered links (e.g. the team invite link) |
 | `GOOGLE_CLIENT_ID` | lib/auth.ts | OAuth keys |
 | `GOOGLE_CLIENT_SECRET` | lib/auth.ts | OAuth keys |
 | `GITHUB_CLIENT_ID` | lib/auth.ts | OAuth keys |
 | `GITHUB_CLIENT_SECRET` | lib/auth.ts | OAuth keys |
 
-`NEXT_PUBLIC_` prefix means the variable is exposed to the browser. Never add `NEXT_PUBLIC_` to secret keys like `DATABASE_URL` or `BETTER_AUTH_SECRET`.
+`NEXT_PUBLIC_` prefix means the variable is exposed to the browser. Never add `NEXT_PUBLIC_` to secret keys like `DATABASE_URL` or `BETTER_AUTH_SECRET`. For server-only values that a Server Component needs at request time (not build time), prefer deriving from the live request (see `lib/get-request-origin.ts`) over a `NEXT_PUBLIC_*` env var where possible.
 
 ---
 
@@ -244,13 +246,18 @@ Approved dependencies for this project:
 - `recharts` — dashboard visualization
 - `lucide-react` — icons
 - `tailwindcss` — styling
-- `shadcn/ui` components — UI primitives
-- `zod` — Zod schema validation
+- `radix-ui` — unstyled primitives underlying shadcn/ui components (`components/ui/`)
+- `class-variance-authority` — variant styling for shadcn/ui components (e.g. Button's `variant`/`size`)
+- `clsx`, `tailwind-merge` — class-merging helpers (`lib/utils.ts`'s `cn()`)
+- `shadcn` — CLI used to scaffold `components/ui/` primitives (not a runtime dependency of the app itself)
+- `tw-animate-css` — Tailwind v4 animation utilities used by shadcn/ui components
 - `sonner` — toast notifications
 - `vitest` — unit test runner (dev dependency)
 - `@vitejs/plugin-react` — vitest React support (dev dependency)
 - `@vitest/coverage-v8` — vitest coverage reporter (dev dependency)
 - `playwright` — E2E test runner (dev dependency)
+
+Note: `zod` is a transitive dependency of `better-auth` only — it is not a direct project dependency and is not used in application code. Do not import it without first adding it here and to `package.json` directly.
 
 Do not install any other packages without updating this list first.
 

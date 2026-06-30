@@ -24,44 +24,58 @@ Software development teams frequently face execution challenges:
 
 ```
 /                         → Homepage (Features, workflow preview, getting started)
-/login                    → Auth page (Email signup/login, Google & GitHub OAuth)
-/dashboard                → Overarching workspace overview (All projects, active status, system activity)
-/projects                 → Projects list page (Displaying status and overview of all projects)
+/login                    → Auth page (Email login, Google & GitHub OAuth, ?redirect= param support)
+/signup                   → Auth page (Email signup, Google & GitHub OAuth, ?redirect= param support)
+/onboarding               → First-time setup — create a new organization (becomes owner)
+/join/[code]              → Invite link landing page — validates invite code, lets a new member pick a role and join an existing organization
+/dashboard                → Overarching workspace overview (All projects, active status, system activity) — scoped to current org
+/projects                 → Projects list page (Displaying status and overview of all projects) — scoped to current org
 /projects/new             → Project creation form
 /projects/[id]            → Project dashboard (Progress indicators, team, active modules, health alerts, activity feed)
 /projects/[id]/modules/new → Add a new module to a project
 /projects/[id]/modules/[mid] → Module detail page (Description, owner, status, deadline, blocker logs, and technical notes)
-/profile                  → Profile settings & role management (Developer, Team Lead, Project Manager)
+/profile                  → Profile settings, role management (Developer, Team Lead, Project Manager — read-only for Owner), and Connected Accounts (link/unlink Google & GitHub)
+/team                     → Organization member roster, role management, invite link (owner-only to view/regenerate), member removal
 ```
 
 ---
 
 ## Navigation
 
-Top navbar. Clean, professional, and minimal. Three main navigation links:
+Top navbar. Clean, professional, and minimal. Four main navigation links:
 
 ```
-Dashboard    Projects    Profile
+Dashboard    Projects    Team    Profile
 ```
 
 ---
 
 ## Core User Flows
 
-### 1. Registration & Authentication
+### 1. Registration, Authentication & Workspace Setup
 * User registers or signs in using Better Auth (Email/Password, Google OAuth, or GitHub OAuth).
-* New user sets their role (Developer, Team Lead, or Project Manager) in their Profile.
+* A brand-new user with no organization lands on `/onboarding` and either:
+  * **Creates an organization** — fills in company name, description, industry, and team size; becomes that organization's `owner` (sticky role, not changeable via Profile).
+  * **Joins via invite link** — visits `/join/[code]` shared by an existing owner, picks a role (Developer, Team Lead, or Project Manager), and joins that organization directly.
+* All projects, modules, and team members are scoped to the user's organization — there is no shared global workspace across organizations.
+* Account linking: a user who signed up with email/password can connect a Google or GitHub account from Profile → Connected Accounts (only from an authenticated session — never automatically on a bare email match, to prevent account-takeover via unverified signup).
 
-### 2. Project Creation & Team Setup
-* A Team Lead or Project Manager creates a new project, entering the Project Name, Description, Start Date, End Date, Priority, and adding Team Members.
+### 2. Team Management & Invites
+* The organization owner shares an invite link (`/join/[code]`) from the Team page — only the owner can view or regenerate this link.
+* New members select their own role when joining via the link.
+* Owners, Project Managers, and Team Leads can change other members' roles (never the owner's); Owners and Project Managers can remove members (not themselves, not the owner).
+* A removed member is reset to no organization and must re-onboard (create or join an organization again) on next login.
+
+### 3. Project Creation & Team Setup
+* A Team Lead, Project Manager, or Owner creates a new project, entering the Project Name, Description, Start Date, End Date, Priority, and adding Team Members from the organization roster.
 * The Project Dashboard is initialized, displaying 0% progress and showing all metrics on track.
 
-### 3. Module Definition & Assignment
+### 4. Module Definition & Assignment
 * The project scope is broken down into Modules (e.g., Authentication, database schema, payment integration).
 * Each module is configured with: Name, Description, Assigned Developer, Progress percentage (0-100%), Status, and Deadline.
 * Developers are assigned specific module ownership to enforce strict accountability.
 
-### 4. Progress Updates & Status Control
+### 5. Progress Updates & Status Control
 * Assigned developers regularly update completion percentages (0-100%) and select the corresponding state:
   * `Not Started`
   * `In Progress`
@@ -70,20 +84,20 @@ Dashboard    Projects    Profile
   * `Blocked`
 * The system automatically recalculates the overall project progress based on average module progress.
 
-### 5. Blocker Reporting
+### 6. Blocker Reporting
 * If a developer is stuck, they update the module state to `Blocked` and submit a Blocker Report detailing what they are waiting for (e.g., "Waiting for API endpoint from Backend", "Waiting for Database migration").
 * The blocker is immediately flagged red on both the Project Dashboard and the Main Dashboard to alert managers.
 
-### 6. Technical Notes & Knowledge Base
+### 7. Technical Notes & Knowledge Base
 * Each module contains a dedicated Notes & Documentation area where developers document:
   * Technical Notes: Database tables affected, API endpoints, business logic rules.
   * Implementation Notes: Setup steps or design decisions.
 * This acts as a localized knowledge base, preventing integration friction.
 
-### 7. Real-Time Activity Feed
+### 8. Real-Time Activity Feed
 * Any status updates, progress increments, module creations, or blocker reports automatically publish to the project's real-time Activity Feed (e.g., "Abraham updated Clients Module progress to 75%").
 
-### 8. Project Health Monitoring (Schedule Performance)
+### 9. Project Health Monitoring (Schedule Performance)
 * The system continuously monitors progress relative to elapsed time:
   * If $\text{Time Used} > \text{Progress} + 20\%$ (e.g. 70% of time used, but project progress is only 30%), the project status transitions to 🔴 High Risk.
   * System alerts the team immediately on the dashboard.
@@ -92,8 +106,10 @@ Dashboard    Projects    Profile
 
 ## Features In Scope
 
-* **Better Auth:** Secure login, signup, logout, and Google/GitHub OAuth integrations.
-* **Role-Based Access Control (RBAC):** Developer, Team Lead, and Project Manager roles with appropriate action permissions.
+* **Better Auth:** Secure login, signup, logout, and Google/GitHub OAuth integrations, with explicit user-initiated account linking (Connect/Disconnect from Profile).
+* **Multi-Tenant Organizations:** Every user belongs to exactly one organization (workspace). The first member to set up an org becomes its `owner`; everyone else joins via a shareable, owner-rotatable invite link. All projects, modules, activity, and team membership are scoped to the organization — there is no shared global workspace.
+* **Role-Based Access Control (RBAC):** `Owner` (sticky, full access), Developer, Team Lead, and Project Manager roles with appropriate action permissions, enforced server-side on every Server Action.
+* **Team Management:** Org member roster, role changes, member removal, and an invite link visible/regeneratable only to the owner.
 * **Project Dashboard:** Overview of active projects, overall completion rates, team lists, deadlines, and risk badges.
 * **Module Management:** Creation, updating, and developer assignment for module-level tracking.
 * **Module Progress States:** Clear states (`Not Started`, `In Progress`, `Review`, `Completed`, `Blocked`).
@@ -114,7 +130,7 @@ Dashboard    Projects    Profile
 * **Sprint Management:** Complete Agile sprint boards, story points, and backlog management.
 * **AI Requirements Analyzer:** Auto-generating project modules from uploaded text documents.
 * **AI Risk Prediction:** Predictive delays modeled on team velocity.
-* **Payment/Subscription System:** Single-tenant team space, no multi-tier SaaS billing components.
+* **Payment/Subscription System:** Multi-tenant organizations exist (every workspace is its own tenant), but there is no billing, plan tiers, or seat-based pricing — organizations are free and unlimited.
 
 ---
 

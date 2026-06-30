@@ -153,7 +153,7 @@ export function ProjectsClient({ projects, totalModules, userRole }: Props) {
       {/* Page header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Workspace
           </p>
           <h1 className="mt-1 text-[32px] font-bold leading-tight text-foreground">Projects</h1>

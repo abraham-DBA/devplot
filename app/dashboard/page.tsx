@@ -299,10 +299,10 @@ export default async function DashboardPage() {
         {/* Page header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               Workspace · DevFlow
             </p>
-            <h1 className="mt-1 text-3xl font-bold text-foreground">
+            <h1 className="mt-1 text-[32px] font-bold leading-tight text-foreground">
               {greeting}, {firstName}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">

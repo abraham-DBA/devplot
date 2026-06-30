@@ -21,7 +21,7 @@ After building any component — update this file with the component name, file 
 ### Profile Page
 
 File: `app/profile/page.tsx`, `components/profile/ProfileForm.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 | Property | Class |
 | --- | --- |
@@ -32,11 +32,16 @@ Last updated: 2026-06-28
 | Input field | `h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-brand-primary focus:ring-1 focus:ring-brand-primary` |
 | Role card — selected | `rounded-xl border border-foreground bg-muted p-4` |
 | Role card — unselected | `rounded-xl border border-border bg-card p-4 hover:bg-background` |
+| Owner role badge (read-only) | `rounded-xl border border-border bg-muted px-4 py-3` — pill: `rounded-full bg-background px-2.5 py-0.5 font-mono text-[10px] uppercase` |
 | Connected account row | `flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3` |
 | Provider icon | `flex size-9 items-center justify-center rounded-lg bg-foreground text-card` |
+| Connect/Disconnect button | `rounded-lg border border-border bg-card px-4 py-1.5 text-sm font-medium text-foreground hover:bg-background disabled:opacity-50` |
 | Save button | `rounded-lg bg-foreground px-6 py-2.5 text-sm font-semibold text-card hover:bg-brand-primary disabled:opacity-40` |
 | Cancel button | `rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground hover:bg-background disabled:opacity-40` |
 | Module sidebar card | `rounded-xl border border-border bg-card p-4 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+
+**Pattern notes:**
+`isOwner` prop (from `currentUser.role === "owner"` in the Server Component) swaps the editable role-card grid for a read-only "Owner / Fixed" badge — owners can't change their own role, so `isDirty` only tracks the name field for them. Connected Accounts buttons are wired to `authClient.linkSocial({ provider, callbackURL: "/profile" })` (Connect — full-page OAuth redirect) and `authClient.unlinkAccount({ providerId })` (Disconnect — in-page, `router.refresh()` on success). A per-provider `linkingProvider` state (not the shared form `isPending`) drives the "Connecting…"/"Disconnecting…" label so it doesn't get confused with the Save/Cancel transition.
 
 ---
 
@@ -263,7 +268,7 @@ Event rows use `divide-y divide-border`. Each row has a colored `size-2 rounded-
 ### Team Page
 
 File: `app/team/page.tsx`, `components/team/TeamClient.tsx`
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 | Property | Class |
 | --- | --- |
@@ -281,9 +286,11 @@ Last updated: 2026-06-29
 | Pending badge | `rounded-full px-2.5 py-1 text-xs font-medium bg-warning-light text-warning` |
 | Remove button | `text-sm font-medium text-destructive hover:opacity-75` |
 | Invite button | `rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-card hover:opacity-90` |
+| Regenerate link button | `text-xs font-medium text-muted-foreground hover:text-destructive disabled:opacity-50` |
+| Remove-member AlertDialog | shadcn `components/ui/alert-dialog.tsx` — `AlertDialogAction variant="destructive"` |
 
 **Pattern notes:**
-Server Component (`app/team/page.tsx`) fetches from `organizationMembers` + `organizations` for the current user's org, derives stats (members, active, owners, leadsAndPMs), builds `inviteLink = /join/[inviteCode]`, and passes typed `Member[]` + stats + `inviteLink` + `currentUserRole` to `TeamClient`. Client Component handles: search filter state, filter tab state, role dropdown (disabled for owners/self, hidden for users without `CAN_CHANGE_ROLES`), remove button (hidden for owners/self, visible only to `CAN_REMOVE_MEMBERS`), invite modal showing the shareable link with a "Copy" button (`navigator.clipboard.writeText`). Role dropdown uses a native `<select>` with `appearance-none` and an overlaid `ChevronDown` icon. Owner rows show a read-only role label instead of a dropdown.
+Server Component (`app/team/page.tsx`) fetches from `organizationMembers` + `organizations` for the current user's org, derives stats (members, active, owners, leadsAndPMs), derives `inviteBase` from `lib/get-request-origin.ts` (not `NEXT_PUBLIC_APP_URL`), and only includes `initialInviteCode` in the props when `currentUser.role === "owner"` — non-owners get `null`, so the code never reaches the client payload (not just CSS-hidden). Client Component handles: search filter state, filter tab state, role dropdown (disabled for owners/self, hidden for users without `CAN_CHANGE_ROLES`), remove button (hidden for owners/self, visible only to `CAN_REMOVE_MEMBERS`), the "+ Invite member" button and invite modal (hidden entirely unless `canInvite`), and "Regenerate link" (owner-only, calls `rotateInviteCode`, dedicated `isRotating` flag — not the shared `isPending` — so the label doesn't lie about what's in flight). Role dropdown uses a native `<select>` with `appearance-none` and an overlaid `ChevronDown` icon. Owner rows show a read-only role label instead of a dropdown. Member removal uses a shadcn `AlertDialog` (single dialog instance, driven by a `memberToRemove: { id, name } | null` state) instead of the native `confirm()` — Radix's `AlertDialogAction`/`AlertDialogCancel` both close the dialog automatically on click (they render as `DialogPrimitive.Close`), so the confirm click fires the removal and visually dismisses the dialog in the same tick; the result surfaces afterward via toast.
 
 ---
 
@@ -321,4 +328,19 @@ Last updated: 2026-06-29
 | Submit button | `mt-2 h-11 w-full rounded-lg bg-foreground text-sm font-bold text-card hover:bg-brand-primary disabled:opacity-50` |
 
 **Pattern notes:**
-Props: `{ inviteCode: string; orgName: string }`. Three role cards (developer, team_lead, project_manager). Calls `joinOrganization(inviteCode, selectedRole)`. Uses `useTransition`. Same two-column split layout as onboarding. Server page (`app/join/[code]/page.tsx`) validates invite code against DB — shows graceful "Invalid invite link" card if code not found. Unauthenticated users redirected to `/login?redirect=/join/[code]`; already-onboarded users redirected to `/dashboard`.
+Props: `{ inviteCode: string; orgName: string }`. Three role cards (developer, team_lead, project_manager). Calls `joinOrganization(inviteCode, selectedRole)`. Uses `useTransition`. Same two-column split layout as onboarding. Server page (`app/join/[code]/page.tsx`) validates invite code against DB — shows graceful "Invalid invite link" card if code not found. Unauthenticated users redirected to `/login?redirect=/join/[code]`; already-onboarded users redirected to `/dashboard`. `/login` ↔ `/signup` footer links carry the `?redirect=` param both directions (`lib/sanitize-redirect.ts`) so a first-time invitee who needs to sign up doesn't lose the invite mid-flow.
+
+---
+
+### shadcn/ui Primitives
+
+File: `components/ui/button.tsx`, `components/ui/alert-dialog.tsx`, `components/ui/select.tsx`, `components/ui/slider.tsx`
+Last updated: 2026-06-30
+
+Installed via shadcn CLI, built on `radix-ui` + `class-variance-authority`. Use as-is — do not hand-roll a parallel modal/dropdown/slider implementation when one of these covers the need.
+
+| Component | Notes |
+| --- | --- |
+| `Button` | `variant`: `default` \| `outline` \| `secondary` \| `ghost` \| `destructive` \| `link`. `size`: `default` \| `xs` \| `sm` \| `lg` \| `icon*`. Used directly and as the base for `AlertDialogAction`/`AlertDialogCancel`. |
+| `AlertDialog` | Controlled via `open`/`onOpenChange` — see Team Page's remove-member confirmation for the canonical usage (single dialog instance + a `{ id, name } \| null` state, not one dialog per row). `AlertDialogAction`/`Cancel` both auto-close on click (render as `DialogPrimitive.Close`) — don't add manual `setOpen(false)` calls, they're redundant. Outside-click and outside-interaction are blocked by Radix by default; Escape still closes it. |
+| `Select` / `Slider` | Used in module progress/status controls — see ModuleDetailClient pattern notes. |

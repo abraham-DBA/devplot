@@ -71,9 +71,35 @@ This build plan outlines the phases to build the DevFlow application, starting f
 
 ---
 
-## Phase 8 — Verification, Security, & Deployment
+## Phase 8 — Profile & Settings
+* Build the Profile page `/profile`: avatar, editable display name, role selector (3 cards — read-only badge instead for the `owner` role), Connected Accounts section.
+* Implement `updateProfile` Server Action in `actions/users.ts` — validates name + role, blocks role changes for owners, keeps `organizationMembers.role` in sync with `user.role`.
+* Wire Connected Accounts to `authClient.linkSocial()` / `authClient.unlinkAccount()` so Google/GitHub can be connected or disconnected from an already-authenticated session — never automatically off an OAuth email match.
+
+---
+
+## Phase 9 — Verification, Security, & Deployment
 * **Static Analysis and Linters:** Run static analyzers and linters (`npm run lint` / ESLint) to catch stylistic anomalies, structural mistakes, or Next.js deprecation notices.
 * **AI-Assisted Testing (TDD):** For core logic blocks (e.g. parent project health metrics, role authorizations), write failing tests first. Confirm they fail on stubbed code before implementing the solution to verify test fidelity.
 * **Security Threat Audits:** Audit the finalized code against threat models. Avoid raw SQL query blocks (use Drizzle query helpers) and verify that no credentials or secrets are committed.
-* **Access Control Verification:** Test role permissions (Developer, Team Lead, Project Manager) to verify they enforce correct database write rules.
+* **Access Control Verification:** Test role permissions (Developer, Team Lead, Project Manager, Owner) to verify they enforce correct database write rules.
 * **Production Compilation Check:** Execute `npm run build` to verify Next.js bundle output and strict type safety.
+
+---
+
+## Phase 10 — Team Page
+* Build the Team page `/team`: org member roster fetched from `organizationMembers`, stat cards (members/active/owners/leads & PMs), search + filter tabs.
+* Role dropdown (disabled for owners/self, hidden for unauthorized roles) calling `updateMemberRole` in `actions/team.ts`.
+* Remove-member flow using a shadcn `AlertDialog` confirmation (replacing the native `confirm()`), guarded against removing the owner, self, or a member with assigned modules/unresolved blockers.
+* Invite modal showing the shareable `/join/[code]` link with copy + owner-only "Regenerate link" (`rotateInviteCode` action) — invite code is only ever sent to the client when the requester is the owner, not just hidden by CSS.
+
+---
+
+## Phase 11 — Multi-Tenant Organization Layer
+* Schema: `organizations` + `organizationMembers` tables; `organizationId` added to `user`, `projects`, `activityLogs`.
+* Onboarding (`/onboarding`) redesigned around `CompanyDetailsForm` — first user creates an organization and becomes its `owner` in a single transaction.
+* Invite flow (`/join/[code]` + `JoinOrgForm`) — new members validate the invite code, pick a role, and join via `joinOrganization` in a transaction.
+* `?redirect=` param threaded through `/login` ↔ `/signup` ↔ `/join/[code]` so a first-time invitee who needs to sign up doesn't lose their invite mid-flow.
+* `proxy.ts` updated: `/join` routes are protected but exempt from the onboarding redirect; already-onboarded users hitting `/join` bounce to `/dashboard`.
+* Data isolation retrofitted across every existing page/action — all `projects`/`modules`/`activityLogs` queries scoped by `organizationId`.
+* `lib/get-request-origin.ts` added so org-scoped links (the invite link) derive their origin from the live request instead of the build-time-baked `NEXT_PUBLIC_APP_URL`.

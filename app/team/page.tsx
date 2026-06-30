@@ -7,6 +7,7 @@ import { eq, inArray } from "drizzle-orm";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { TeamClient } from "@/components/team/TeamClient";
 import type { SessionUser } from "@/lib/auth-types";
+import { getRequestOrigin } from "@/lib/get-request-origin";
 
 type MemberRole = "owner" | "developer" | "team_lead" | "project_manager";
 
@@ -62,7 +63,7 @@ export default async function TeamPage() {
     ).length,
   };
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await getRequestOrigin();
   const inviteBase = `${appUrl}/join`;
 
   // Only the owner can invite — non-owners never receive the invite code, not even in the page payload.
