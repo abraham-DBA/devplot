@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/schema";
+import { projects, organizationMembers } from "@/lib/schema";
 import { auth } from "@/lib/auth";
+import { and, eq, inArray } from "drizzle-orm";
 
 const VALID_PRIORITIES = ["low", "medium", "high", "critical"] as const;
 type Priority = "low" | "medium" | "high" | "critical";
 
-const CAN_CREATE_PROJECT = ["owner", "project_manager"] as const;
+const CAN_CREATE_PROJECT = ["owner", "team_lead", "project_manager"] as const;
 
 type CreateProjectInput = {
   name: string;
@@ -27,7 +28,7 @@ export async function createProject(
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
   if (!CAN_CREATE_PROJECT.includes(session.user.role as (typeof CAN_CREATE_PROJECT)[number]))
-    return { success: false, error: "Only project managers can create projects." };
+    return { success: false, error: "Only owners, team leads, and project managers can create projects." };
 
   const orgId = session.user.organizationId;
   if (!orgId) return { success: false, error: "No organization found. Please complete onboarding." };
@@ -42,6 +43,22 @@ export async function createProject(
     return { success: false, error: "End date must be after start date." };
   if (!VALID_PRIORITIES.includes(priority))
     return { success: false, error: "Invalid priority." };
+
+  if (teamMembers.length > 0) {
+    const validMembers = await db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.organizationId, orgId),
+          inArray(organizationMembers.userId, teamMembers),
+        ),
+      );
+    const validIds = new Set(validMembers.map((m) => m.userId));
+    const invalid = teamMembers.filter((memberId) => !validIds.has(memberId));
+    if (invalid.length > 0)
+      return { success: false, error: "One or more selected team members are not in your organization." };
+  }
 
   const id = crypto.randomUUID();
 

@@ -1,5 +1,9 @@
+import Link from "next/link";
+
 type Blocker = {
   id: string;
+  moduleId: string;
+  projectId: string;
   moduleName: string;
   description: string;
 };
@@ -26,12 +30,16 @@ export function BlockerBanner({ blockers, updatedLabel }: BlockerBannerProps) {
 
       <div className="mt-3 grid gap-2 md:grid-cols-2">
         {blockers.map((blocker) => (
-          <p key={blocker.id} className="text-sm text-foreground">
+          <Link
+            key={blocker.id}
+            href={`/projects/${blocker.projectId}/modules/${blocker.moduleId}`}
+            className="text-sm text-foreground transition-opacity hover:opacity-75"
+          >
             <span className="mr-1 text-destructive">*</span>
             <span className="font-semibold">{blocker.moduleName}</span>
             {" — "}
             <span className="text-muted-foreground">{blocker.description}</span>
-          </p>
+          </Link>
         ))}
       </div>
     </div>

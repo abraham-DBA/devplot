@@ -22,6 +22,7 @@ type Props = {
   notes: NoteEntry[];
   openBlockers: number;
   totalBlockers: number;
+  canEdit: boolean;
 };
 
 const STATUS_OPTIONS: { value: ModuleStatus; label: string }[] = [
@@ -162,6 +163,7 @@ export function ModuleDetailClient({
   initialProgress,
   initialStatus,
   notes: initialNotes,
+  canEdit,
 }: Props) {
   // Track the last-saved values separately from the in-flight edited values.
   // isDirty compares against savedProgress/savedStatus, not the SSR initialProps,
@@ -213,13 +215,13 @@ export function ModuleDetailClient({
             onValueChange={(val) => setProgress(val[0])}
             max={100}
             step={1}
-            disabled={isSaving}
+            disabled={isSaving || !canEdit}
             className="flex-1"
           />
           <Select
             value={status}
             onValueChange={(val) => setStatus(val as ModuleStatus)}
-            disabled={isSaving}
+            disabled={isSaving || !canEdit}
           >
             <SelectTrigger className="h-9 w-[130px] border-border bg-card text-foreground">
               <SelectValue placeholder="Select status" />
@@ -235,10 +237,10 @@ export function ModuleDetailClient({
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving || !isDirty}
+            disabled={isSaving || !isDirty || !canEdit}
             className={[
               "h-9 min-w-[72px] rounded-lg px-4 text-sm font-semibold transition-colors",
-              isDirty && !isSaving
+              isDirty && !isSaving && canEdit
                 ? "bg-foreground text-card hover:bg-brand-primary"
                 : "bg-background text-muted-foreground cursor-not-allowed",
             ].join(" ")}
@@ -246,6 +248,11 @@ export function ModuleDetailClient({
             {isSaving ? "Saving…" : isDirty ? "Save" : "Saved"}
           </button>
         </div>
+        {!canEdit && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Only the assigned developer or a lead/PM/owner can edit progress.
+          </p>
+        )}
       </div>
 
       {/* Notes section */}

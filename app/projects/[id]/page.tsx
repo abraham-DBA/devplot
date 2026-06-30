@@ -191,7 +191,7 @@ export default async function ProjectDetailPage({
             </p>
           </div>
 
-          {["team_lead", "project_manager"].includes(currentUser.role ?? "") && (
+          {["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "") && (
             <Link
               href={`/projects/${id}/modules/new`}
               className="shrink-0 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"

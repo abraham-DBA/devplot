@@ -263,6 +263,16 @@ Do not install any other packages without updating this list first.
 
 ---
 
+## Integration Tests (`tests/integration/`)
+
+Server Actions in `actions/*.ts` call real `db`/`auth` directly, so testing RBAC, org-isolation, and multi-step lifecycles (e.g. blocker report → resolve) means actually exercising them — not mocking Drizzle's chainable query builder. `tests/integration/` runs the real Server Actions against the real dev Postgres instance (same `DATABASE_URL` as `npm run dev`).
+
+- `tests/integration/setup.ts` (loaded via `vitest.config.ts`'s `setupFiles`) mocks only the three Next.js-runtime-only pieces that don't work outside a real request context: `@/lib/auth`'s `getSession()` (controlled per-test via `setMockUser()`), `next/headers`, and `next/cache`. `next/navigation`'s `redirect()` is mocked to throw `MockRedirectError` instead of doing a real redirect — use `await expect(action(...)).rejects.toThrow(MockRedirectError)` to assert an action reached its success path when that action redirects on success (e.g. `createProject`, `createModule`).
+- `tests/integration/fixtures.ts` provides `createTestOrg`, `createTestMember`, `createTestProject`, `createTestModule`, `createTestBlocker` (all real DB inserts, IDs prefixed `test-`) and `cleanupTestOrg(orgId, userIds)`. **Always pass every user ID created in the test to `cleanupTestOrg`'s second argument** — deleting the org cascades away `organizationMembers`/`projects`/`modules`/`blockerLogs`/`activityLogs`, but `user` rows are never referenced by the org and must be deleted explicitly or they leak into the database permanently across test runs.
+- Before writing an assertion that depends on which validation check fires first in a multi-check action (e.g. `removeMember` checks assigned-modules before unresolved-blockers), read the action's actual check order — don't assume.
+
+---
+
 ## AI-Assisted Testing & TDD Workflow
 
 To maintain absolute correctness and spec alignment, follow this testing workflow:

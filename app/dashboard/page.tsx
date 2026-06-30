@@ -15,6 +15,7 @@ import { ActivityChart } from "@/components/dashboard/ActivityChart";
 import { ProjectCard } from "@/components/dashboard/ProjectCard";
 import { ModulesTable } from "@/components/dashboard/ModulesTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { calculateProjectHealth } from "@/lib/health";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "completed" | "blocked";
 type ProjectHealth = "on_track" | "at_risk" | "high_risk";
@@ -131,11 +132,37 @@ export default async function DashboardPage() {
     : [];
   const memberNameMap = Object.fromEntries(memberUsers.map((u) => [u.id, u.name]));
 
+  // ── Live project health ────────────────────────────────────────────────────
+  // Recomputed here instead of trusting the stored `projects.health` column,
+  // which only updates on module mutations — a project with no recent activity
+  // can otherwise show a stale "on_track" badge while the detail page (already
+  // live) shows the correct at_risk/high_risk. Computed once, reused for the
+  // attention count, the sort order, and each ProjectCard below.
+
+  const projectModuleMap: Record<string, typeof allModules> = {};
+  for (const m of allModules) {
+    if (!projectModuleMap[m.projectId]) projectModuleMap[m.projectId] = [];
+    projectModuleMap[m.projectId].push(m);
+  }
+  const healthByProject = Object.fromEntries(
+    allProjects.map((p) => {
+      const mods = projectModuleMap[p.id] ?? [];
+      const hasBlockedModule = mods.some((m) => m.status === "blocked");
+      const health = calculateProjectHealth({
+        startDate: p.startDate,
+        endDate: p.endDate,
+        progress: p.progress,
+        hasBlockedModule,
+      });
+      return [p.id, health];
+    }),
+  );
+
   // ── Derived stats ─────────────────────────────────────────────────────────
 
   const activeProjectCount = allProjects.length;
   const needAttentionCount = allProjects.filter(
-    (p) => p.health === "at_risk" || p.health === "high_risk"
+    (p) => healthByProject[p.id] === "at_risk" || healthByProject[p.id] === "high_risk"
   ).length;
   const avgProgress = allProjects.length > 0
     ? Math.round(allProjects.reduce((sum, p) => sum + p.progress, 0) / allProjects.length)
@@ -189,11 +216,15 @@ export default async function DashboardPage() {
   const blockerModules = blockerModuleIds.length > 0
     ? allModules.filter((m) => blockerModuleIds.includes(m.id))
     : [];
-  const blockerModuleMap = Object.fromEntries(blockerModules.map((m) => [m.id, m.name]));
+  const blockerModuleInfoMap = Object.fromEntries(
+    blockerModules.map((m) => [m.id, { name: m.name, projectId: m.projectId }]),
+  );
 
   const blockerBannerItems = allBlockers.slice(0, 4).map((b) => ({
     id: b.id,
-    moduleName: blockerModuleMap[b.moduleId] ?? "Unknown module",
+    moduleId: b.moduleId,
+    projectId: blockerModuleInfoMap[b.moduleId]?.projectId ?? "",
+    moduleName: blockerModuleInfoMap[b.moduleId]?.name ?? "Unknown module",
     description: b.description,
   }));
   const blockerUpdatedLabel = mostRecentBlockerTime(allBlockers.map((b) => new Date(b.createdAt)));
@@ -201,11 +232,6 @@ export default async function DashboardPage() {
   // ── Project cards (sorted: high_risk → at_risk → on_track) ───────────────
 
   const healthOrder: Record<ProjectHealth, number> = { high_risk: 0, at_risk: 1, on_track: 2 };
-  const projectModuleMap: Record<string, typeof allModules> = {};
-  for (const m of allModules) {
-    if (!projectModuleMap[m.projectId]) projectModuleMap[m.projectId] = [];
-    projectModuleMap[m.projectId].push(m);
-  }
   // Build moduleId → projectId map once so blocker aggregation is O(n) not O(n²)
   const moduleProjectIdMap = Object.fromEntries(allModules.map((m) => [m.id, m.projectId]));
   const projectBlockerCountMap: Record<string, number> = {};
@@ -215,7 +241,7 @@ export default async function DashboardPage() {
   }
 
   const sortedProjects = [...allProjects].sort(
-    (a, b) => healthOrder[a.health as ProjectHealth] - healthOrder[b.health as ProjectHealth]
+    (a, b) => healthOrder[healthByProject[a.id]] - healthOrder[healthByProject[b.id]]
   );
 
   const projectCards = sortedProjects.map((p) => {
@@ -232,7 +258,7 @@ export default async function DashboardPage() {
       id: p.id,
       name: p.name,
       description: p.description,
-      health: p.health as ProjectHealth,
+      health: healthByProject[p.id],
       progress: p.progress,
       timeUsed: timeUsedPct(p.startDate, p.endDate),
       drift,

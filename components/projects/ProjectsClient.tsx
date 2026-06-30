@@ -161,7 +161,7 @@ export function ProjectsClient({ projects, totalModules, userRole }: Props) {
             {projects.length} project{projects.length !== 1 ? "s" : ""} · {totalModules} module{totalModules !== 1 ? "s" : ""}
           </p>
         </div>
-        {userRole === "project_manager" && (
+        {["owner", "team_lead", "project_manager"].includes(userRole) && (
           <Link
             href="/projects/new"
             className="rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"

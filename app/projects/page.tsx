@@ -3,10 +3,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { projects, modules, blockerLogs, user } from "@/lib/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ProjectsClient } from "@/components/projects/ProjectsClient";
+import { calculateProjectHealth } from "@/lib/health";
 
 export default async function ProjectsPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -32,14 +33,14 @@ export default async function ProjectsPage() {
           .where(inArray(modules.projectId, allProjects.map((p) => p.id)))
       : [];
 
-  // Fetch all unresolved blockers
+  // Fetch all unresolved blockers — scoped to this org's modules, not the whole table
   const moduleIds = allModules.map((m) => m.id);
   const activeBlockers =
     moduleIds.length > 0
       ? await db
           .select()
           .from(blockerLogs)
-          .where(eq(blockerLogs.resolved, false))
+          .where(and(inArray(blockerLogs.moduleId, moduleIds), eq(blockerLogs.resolved, false)))
       : [];
 
   // Collect all unique team member IDs across all projects
@@ -92,11 +93,22 @@ export default async function ProjectsPage() {
     const memberNames = memberIds
       .map((id) => userNameMap[id])
       .filter((name): name is string => !!name);
+    // Recompute live instead of trusting the stored column, which only updates
+    // on module mutations — a project with no recent activity can otherwise
+    // show a stale "on_track" badge here while the detail page (already live)
+    // shows the correct at_risk/high_risk.
+    const hasBlockedModule = mods.some((m) => m.status === "blocked");
+    const health = calculateProjectHealth({
+      startDate: p.startDate,
+      endDate: p.endDate,
+      progress: p.progress,
+      hasBlockedModule,
+    });
     return {
       id: p.id,
       name: p.name,
       description: p.description,
-      health: p.health,
+      health,
       progress: p.progress,
       priority: p.priority,
       modulesCompleted: completedModules,

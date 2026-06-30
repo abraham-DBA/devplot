@@ -4,11 +4,12 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { modules, projects, blockerLogs, user } from "@/lib/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ModuleDetailClient } from "@/components/modules/ModuleDetailClient";
 import { ReportBlockerButton } from "@/components/modules/ReportBlockerButton";
+import { BlockerList } from "@/components/modules/BlockerList";
 import type { NoteEntry } from "@/actions/modules";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked" | "completed";
@@ -89,11 +90,28 @@ export default async function ModuleDetailPage({
     .select()
     .from(blockerLogs)
     .where(eq(blockerLogs.moduleId, mid));
-  const openBlockers = allBlockers.filter((b) => !b.resolved).length;
+  const unresolvedBlockers = allBlockers.filter((b) => !b.resolved);
+  const openBlockers = unresolvedBlockers.length;
+
+  // Resolve reporter names for the open blockers list
+  const reporterIds = [...new Set(unresolvedBlockers.map((b) => b.reportedBy))];
+  const reporters = reporterIds.length > 0
+    ? await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, reporterIds))
+    : [];
+  const reporterNameMap = Object.fromEntries(reporters.map((r) => [r.id, r.name]));
+  const blockerListItems = unresolvedBlockers.map((b) => ({
+    id: b.id,
+    description: b.description,
+    reporterName: reporterNameMap[b.reportedBy] ?? "Unknown",
+    createdAt: b.createdAt.toISOString(),
+  }));
 
   const notes = parseNotes(mod.technicalNotes ?? "");
   const sc = statusConfig[mod.status];
   const dl = deadlineStatus(mod.deadline);
+  const canEdit =
+    currentUser.id === mod.assignedDeveloperId ||
+    ["team_lead", "project_manager", "owner"].includes(currentUser.role ?? "");
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -135,15 +153,19 @@ export default async function ModuleDetailPage({
         {/* Two-column layout */}
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
 
-          {/* Left — progress card + notes (interactive client component) */}
-          <ModuleDetailClient
-            moduleId={mid}
-            initialProgress={mod.progress}
-            initialStatus={mod.status}
-            notes={notes}
-            openBlockers={openBlockers}
-            totalBlockers={allBlockers.length}
-          />
+          {/* Left — progress card + notes + open blockers */}
+          <div>
+            <ModuleDetailClient
+              moduleId={mid}
+              initialProgress={mod.progress}
+              initialStatus={mod.status}
+              notes={notes}
+              openBlockers={openBlockers}
+              totalBlockers={allBlockers.length}
+              canEdit={canEdit}
+            />
+            <BlockerList blockers={blockerListItems} canResolve={canEdit} />
+          </div>
 
           {/* Right — static sidebar panels */}
           <div className="flex flex-col gap-4">
@@ -217,7 +239,7 @@ export default async function ModuleDetailPage({
                     ← Back to project
                   </Link>
                 </li>
-                {["team_lead", "project_manager"].includes(currentUser.role ?? "") && (
+                {["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "") && (
                   <li>
                     <Link
                       href={`/projects/${id}/modules/new`}
