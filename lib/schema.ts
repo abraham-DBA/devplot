@@ -138,6 +138,7 @@ export const blockerLogs = pgTable("blocker_logs", {
     .references(() => user.id)
     .notNull(),
   description: text("description").notNull(),
+  type: text("type").$type<"internal_dependency" | "external">().default("external").notNull(),
   resolved: boolean("resolved").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

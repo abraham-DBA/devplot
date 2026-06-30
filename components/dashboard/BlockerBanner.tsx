@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { blockerTypeBadge, blockerTypeLabel, type BlockerType } from "@/lib/blocker-types";
 
 type Blocker = {
   id: string;
@@ -6,6 +7,7 @@ type Blocker = {
   projectId: string;
   moduleName: string;
   description: string;
+  type: BlockerType;
 };
 
 type BlockerBannerProps = {
@@ -37,6 +39,11 @@ export function BlockerBanner({ blockers, updatedLabel }: BlockerBannerProps) {
           >
             <span className="mr-1 text-destructive">*</span>
             <span className="font-semibold">{blocker.moduleName}</span>
+            <span
+              className={`ml-2 inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide ${blockerTypeBadge[blocker.type]}`}
+            >
+              {blockerTypeLabel[blocker.type]}
+            </span>
             {" — "}
             <span className="text-muted-foreground">{blocker.description}</span>
           </Link>

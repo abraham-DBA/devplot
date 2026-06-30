@@ -60,7 +60,7 @@ describe("actions/modules — org scope (IDOR)", () => {
 
   it("reportBlocker rejects a module ID from a different org", async () => {
     setMockUser(asUser(orgB.ownerId, "owner", orgB.orgId));
-    const result = await reportBlocker(moduleA, "blocked on something");
+    const result = await reportBlocker(moduleA, "blocked on something", "external");
     expect(result.success).toBe(false);
     expect(result.error).toBe("Module not found.");
   });
@@ -146,9 +146,18 @@ describe("actions/modules — blocker lifecycle", () => {
 
   it("reportBlocker sets module status to blocked", async () => {
     setMockUser(asUser(assignee, "developer", org.orgId));
-    const result = await reportBlocker(mod, "waiting on something");
+    const result = await reportBlocker(mod, "waiting on something", "internal_dependency");
     expect(result.success).toBe(true);
     expect(await getModuleStatus(mod)).toBe("blocked");
+  });
+
+  it("reportBlocker rejects an invalid type value", async () => {
+    setMockUser(asUser(assignee, "developer", org.orgId));
+    // @ts-expect-error — deliberately passing a value outside the BlockerType union
+    const result = await reportBlocker(mod, "waiting on something", "vendor_delay");
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Invalid blocker type.");
+    expect(await getModuleStatus(mod)).not.toBe("blocked"); // rejected before any mutation
   });
 
   it("a non-assignee, non-lead user cannot resolve a blocker", async () => {

@@ -102,6 +102,7 @@ export default async function ModuleDetailPage({
   const blockerListItems = unresolvedBlockers.map((b) => ({
     id: b.id,
     description: b.description,
+    type: b.type,
     reporterName: reporterNameMap[b.reportedBy] ?? "Unknown",
     createdAt: b.createdAt.toISOString(),
   }));

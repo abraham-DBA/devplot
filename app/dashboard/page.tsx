@@ -226,6 +226,7 @@ export default async function DashboardPage() {
     projectId: blockerModuleInfoMap[b.moduleId]?.projectId ?? "",
     moduleName: blockerModuleInfoMap[b.moduleId]?.name ?? "Unknown module",
     description: b.description,
+    type: b.type,
   }));
   const blockerUpdatedLabel = mostRecentBlockerTime(allBlockers.map((b) => new Date(b.createdAt)));
 

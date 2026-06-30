@@ -8,6 +8,7 @@ import { modules, activityLogs, blockerLogs, projects } from "@/lib/schema";
 import { auth } from "@/lib/auth";
 import { and, eq } from "drizzle-orm";
 import { calculateProjectHealth, calculateProjectProgress } from "@/lib/health";
+import type { BlockerType } from "@/lib/blocker-types";
 
 const VALID_STATUSES = ["not_started", "in_progress", "review", "blocked", "completed"] as const;
 type ModuleStatus = (typeof VALID_STATUSES)[number];
@@ -221,11 +222,14 @@ export async function addNote(
 export async function reportBlocker(
   moduleId: string,
   description: string,
+  type: BlockerType,
 ): Promise<{ success: boolean; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
 
   if (!description.trim()) return { success: false, error: "Blocker description is required." };
+  if (type !== "internal_dependency" && type !== "external")
+    return { success: false, error: "Invalid blocker type." };
 
   const orgId = session.user.organizationId;
   if (!orgId) return { success: false, error: "No organization found." };
@@ -239,6 +243,7 @@ export async function reportBlocker(
       moduleId,
       reportedBy: session.user.id,
       description: description.trim(),
+      type,
       resolved: false,
       createdAt: new Date(),
     });

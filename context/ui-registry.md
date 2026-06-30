@@ -123,7 +123,7 @@ Last updated: 2026-06-28
 ### Dashboard — BlockerBanner
 
 File: `components/dashboard/BlockerBanner.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 | Property | Class |
 | -------- | ----- |
@@ -131,6 +131,10 @@ Last updated: 2026-06-28
 | Count label | `text-sm font-semibold text-destructive` |
 | Dot | `size-2 rounded-full bg-destructive` |
 | Blocker text | `text-sm text-foreground` — actor bold, description muted |
+| Type badge | `rounded-md border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide` — color from `lib/blocker-types.ts`'s `blockerTypeBadge` |
+
+**Pattern notes:**
+Each row is a `<Link>` to the module detail page (`/projects/{projectId}/modules/{moduleId}`), not plain text — added so blockers are reachable/resolvable from the dashboard, not just visible. Type badge (External/Internal Dependency) renders inline next to the module name, reusing the shared mapping from `lib/blocker-types.ts` rather than a local copy.
 
 ---
 
@@ -239,19 +243,37 @@ Progress slider uses `accent-foreground` for the thumb color (Tailwind 4 no-conf
 
 ---
 
+### Modules — BlockerList
+
+File: `components/modules/BlockerList.tsx`
+Last updated: 2026-06-30
+
+| Property | Class |
+| -------- | ----- |
+| Card | `rounded-xl border border-destructive/20 bg-destructive-light p-5` |
+| Type badge | `rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide` — color from `lib/blocker-types.ts`'s `blockerTypeBadge` |
+| Resolve button | `rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-50` |
+
+**Pattern notes:**
+Renders the module's unresolved blockers (reporter name + date + type badge) with a per-blocker Resolve button, gated by `canResolve` (same assignee/lead/PM/owner eligibility as `ModuleDetailClient`'s `canEdit`). Resolving calls `resolveBlocker(blockerId)` then `router.refresh()`. Returns `null` when there are no open blockers — no empty-state card. Rendered as a sibling below `ModuleDetailClient` in `app/projects/[id]/modules/[mid]/page.tsx`, both wrapped in one `<div>` so they share the left grid cell.
+
+---
+
 ### Modules — ReportBlockerButton
 
 File: `components/modules/ReportBlockerButton.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 | Property | Class |
 | -------- | ----- |
 | Trigger button | `rounded-lg border border-destructive px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive-light` |
 | Modal | `fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm` / inner `max-w-md rounded-xl border border-destructive/20 bg-card p-6` |
+| Type toggle (selected) | `rounded-lg border border-foreground bg-foreground px-3 py-1.5 text-xs font-semibold text-card` |
+| Type toggle (unselected) | `rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background` |
 | Submit button | `flex-1 rounded-lg bg-destructive py-2.5 text-sm font-semibold text-card hover:opacity-90` |
 
 **Pattern notes:**
-Isolated `"use client"` component — lets the page Server Component render most of the sidebar statically. On submit: inserts `blocker_log`, sets `module.status = "blocked"`, recalculates project health, revalidates three paths.
+Isolated `"use client"` component — lets the page Server Component render most of the sidebar statically. Type toggle is a 2-button `grid-cols-2` group (External / Internal Dependency, default "External") copying `ModuleDetailClient.tsx`'s `AddNoteModal`/`NOTE_TYPES` button-group pattern exactly, just two options instead of four — values/labels come from `lib/blocker-types.ts`'s `BLOCKER_TYPES`. On submit: inserts `blocker_log` (with `type`), sets `module.status = "blocked"`, recalculates project health, revalidates three paths.
 
 ---
 

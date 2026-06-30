@@ -4,12 +4,14 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { resolveBlocker } from "@/actions/modules";
+import { blockerTypeBadge, blockerTypeLabel, type BlockerType } from "@/lib/blocker-types";
 
 type Blocker = {
   id: string;
   description: string;
   reporterName: string;
   createdAt: string;
+  type: BlockerType;
 };
 
 type Props = {
@@ -52,7 +54,12 @@ export function BlockerList({ blockers, canResolve }: Props) {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-foreground">{blocker.description}</p>
+                <span
+                  className={`inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide ${blockerTypeBadge[blocker.type]}`}
+                >
+                  {blockerTypeLabel[blocker.type]}
+                </span>
+                <p className="mt-1.5 text-sm text-foreground">{blocker.description}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Reported by {blocker.reporterName} · {formatDate(blocker.createdAt)}
                 </p>

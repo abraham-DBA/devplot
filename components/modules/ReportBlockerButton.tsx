@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { reportBlocker } from "@/actions/modules";
+import { BLOCKER_TYPES, type BlockerType } from "@/lib/blocker-types";
 
 type Props = { moduleId: string };
 
@@ -11,6 +12,7 @@ export function ReportBlockerButton({ moduleId }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
+  const [type, setType] = useState<BlockerType>("external");
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit() {
@@ -19,12 +21,13 @@ export function ReportBlockerButton({ moduleId }: Props) {
       return;
     }
     startTransition(async () => {
-      const result = await reportBlocker(moduleId, description);
+      const result = await reportBlocker(moduleId, description, type);
       if (result.error) {
         toast.error(result.error);
       } else {
         toast.success("Blocker reported. Module status set to Blocked.");
         setDescription("");
+        setType("external");
         setOpen(false);
         // Refresh server data so the status badge + sidebar update without a manual reload
         router.refresh();
@@ -49,6 +52,29 @@ export function ReportBlockerButton({ moduleId }: Props) {
             <p className="mt-1 text-xs text-muted-foreground">
               Describe what is blocking progress. The module status will be set to Blocked.
             </p>
+
+            <div className="mt-4">
+              <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Type
+              </label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {BLOCKER_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setType(t.value)}
+                    className={[
+                      "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                      type === t.value
+                        ? "border-foreground bg-foreground text-card"
+                        : "border-border bg-card text-foreground hover:bg-background",
+                    ].join(" ")}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="mt-4">
               <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
