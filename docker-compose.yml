@@ -3,6 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* vars are inlined into the client bundle at build time,
+      # not read at runtime — env_file below does NOT feed build args, so it
+      # must be passed explicitly here. Build with:
+      #   docker compose --env-file .env.production build
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
     image: devpilot:latest
     container_name: devpilot_app
     restart: unless-stopped
