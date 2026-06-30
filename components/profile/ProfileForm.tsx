@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { updateProfile } from "@/actions/users";
+import { authClient } from "@/lib/auth-client";
 
 type Role = "developer" | "team_lead" | "project_manager";
 
@@ -85,6 +87,8 @@ export function ProfileForm({
   const [savedName, setSavedName] = useState(initialName);
   const [savedRole, setSavedRole] = useState<Role>(initialRole);
   const [isPending, startTransition] = useTransition();
+  const [linkingProvider, setLinkingProvider] = useState<"google" | "github" | null>(null);
+  const router = useRouter();
 
   // Owners cannot change their role, so only name changes make the form dirty.
   const isDirty = isOwner
@@ -113,6 +117,31 @@ export function ProfileForm({
   function handleCancel() {
     setName(savedName);
     setRole(savedRole);
+  }
+
+  // Linking only happens from this already-authenticated session — never
+  // automatically off an OAuth email match — so it can't be used to take
+  // over an account that merely shares an email with the signed-in user.
+  async function handleConnect(provider: "google" | "github") {
+    setLinkingProvider(provider);
+    try {
+      await authClient.linkSocial({ provider, callbackURL: "/profile" });
+    } catch {
+      toast.error(`Could not connect ${provider === "github" ? "GitHub" : "Google"}. Please try again.`);
+      setLinkingProvider(null);
+    }
+  }
+
+  async function handleDisconnect(provider: "google" | "github") {
+    setLinkingProvider(provider);
+    const { error } = await authClient.unlinkAccount({ providerId: provider });
+    setLinkingProvider(null);
+    if (error) {
+      toast.error(error.message ?? "Failed to disconnect account.");
+    } else {
+      toast.success(`${provider === "github" ? "GitHub" : "Google"} disconnected.`);
+      router.refresh();
+    }
   }
 
   return (
@@ -237,10 +266,19 @@ export function ProfileForm({
                 </div>
                 <button
                   type="button"
-                  disabled
-                  className="rounded-lg border border-border bg-card px-4 py-1.5 text-sm font-medium text-foreground opacity-70 cursor-not-allowed"
+                  onClick={() =>
+                    acct.connected ? handleDisconnect(acct.provider) : handleConnect(acct.provider)
+                  }
+                  disabled={linkingProvider === acct.provider}
+                  className="rounded-lg border border-border bg-card px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
                 >
-                  {acct.connected ? "Disconnect" : "Connect"}
+                  {linkingProvider === acct.provider
+                    ? acct.connected
+                      ? "Disconnecting…"
+                      : "Connecting…"
+                    : acct.connected
+                      ? "Disconnect"
+                      : "Connect"}
                 </button>
               </li>
             ))}

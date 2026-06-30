@@ -8,7 +8,7 @@ services:
       # must be passed explicitly here. Build with:
       #   docker compose --env-file .env.production build
       args:
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set — build with: docker compose --env-file .env.production build}
     image: devpilot:latest
     container_name: devpilot_app
     restart: unless-stopped
