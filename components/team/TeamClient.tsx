@@ -16,8 +16,12 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type MemberRole = "owner" | "developer" | "team_lead" | "project_manager";
-type MemberStatus = "active" | "pending";
-type Filter = "all" | "active" | "pending";
+// All org members are immediately "active" — joining via invite link grants
+// full membership with no approval step, so there's no "pending" state for
+// any member to ever be in. Don't reintroduce a Pending filter without an
+// actual pending-membership concept behind it.
+type MemberStatus = "active";
+type Filter = "all" | "active";
 
 type Member = {
   id: string;
@@ -53,7 +57,6 @@ const editableRoleOptions: { value: Exclude<MemberRole, "owner">; label: string 
 const filterTabs: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
-  { value: "pending", label: "Pending" },
 ];
 
 const roleLabel: Record<MemberRole, string> = {

@@ -2,6 +2,7 @@ type ModuleStatus = "in_progress" | "blocked" | "review" | "completed" | "not_st
 
 type ModuleRow = {
   id: string;
+  projectId: string;
   name: string;
   projectName: string;
   assignee: string;
@@ -73,32 +74,47 @@ export function ModulesTable({ modules }: ModulesTableProps) {
               {modules.map((mod) => {
                 const sc = statusConfig[mod.status];
                 const barColor = progressBarColor[mod.status];
+                const href = `/projects/${mod.projectId}/modules/${mod.id}`;
                 return (
+                  // <a> can't legally wrap a whole <tr>, so each cell gets its own
+                  // full-bleed Link instead — the row still reads/behaves as one
+                  // clickable unit since every cell's surface area is covered.
                   <tr key={mod.id} className="hover:bg-background transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-medium text-foreground">{mod.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {mod.projectName} · {mod.assignee}
-                      </p>
+                    <td className="p-0">
+                      <Link href={href} className="block px-6 py-4">
+                        <p className="text-sm font-medium text-foreground">{mod.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {mod.projectName} · {mod.assignee}
+                        </p>
+                      </Link>
                     </td>
-                    <td className="px-4 py-4">
-                      <span className={`rounded-md px-2.5 py-1 text-[10px] font-semibold ${sc.bg} ${sc.text}`}>
-                        {sc.label}
-                      </span>
+                    <td className="p-0">
+                      <Link href={href} className="block px-4 py-4">
+                        <span className={`rounded-md px-2.5 py-1 text-[10px] font-semibold ${sc.bg} ${sc.text}`}>
+                          {sc.label}
+                        </span>
+                      </Link>
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-1.5 w-24 rounded-full bg-background">
-                          <div
-                            className={`h-1.5 rounded-full ${barColor}`}
-                            style={{ width: `${mod.progress}%` }}
-                          />
+                    <td className="p-0">
+                      <Link href={href} className="block px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-1.5 w-24 rounded-full bg-background">
+                            <div
+                              className={`h-1.5 rounded-full ${barColor}`}
+                              style={{ width: `${mod.progress}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground w-8">{mod.progress}%</span>
                         </div>
-                        <span className="text-xs text-muted-foreground w-8">{mod.progress}%</span>
-                      </div>
+                      </Link>
                     </td>
-                    <td className={`px-6 py-4 text-right text-sm font-medium ${mod.deadlineUrgent ? "text-destructive" : "text-foreground"}`}>
-                      {mod.deadline}
+                    <td className="p-0">
+                      <Link
+                        href={href}
+                        className={`block px-6 py-4 text-right text-sm font-medium ${mod.deadlineUrgent ? "text-destructive" : "text-foreground"}`}
+                      >
+                        {mod.deadline}
+                      </Link>
                     </td>
                   </tr>
                 );

@@ -284,13 +284,14 @@ export default async function DashboardPage() {
       const daysLeft = Math.ceil((new Date(m.deadline).getTime() - nowMs) / (1000 * 60 * 60 * 24));
       return {
         id: m.id,
+        projectId: m.projectId,
         name: m.name,
         projectName: proj?.name ?? "Unknown project",
         assignee: ownerNameMap[m.assignedDeveloperId] ?? "Unassigned",
         status: m.status as ModuleStatus,
         progress: m.progress,
         deadline: formatDueDate(m.deadline),
-        deadlineUrgent: daysLeft <= 7,
+        deadlineUrgent: daysLeft <= 3,
       };
     });
 
@@ -344,7 +345,7 @@ export default async function DashboardPage() {
             >
               View projects
             </Link>
-            {currentUser.role === "project_manager" && (
+            {["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "") && (
               <Link
                 href="/projects/new"
                 className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-card transition-colors hover:bg-brand-primary"
@@ -414,7 +415,7 @@ export default async function DashboardPage() {
           {projectCards.length === 0 ? (
             <div className="mt-4 flex h-32 items-center justify-center rounded-xl border border-dashed border-border">
               <p className="text-sm text-muted-foreground">
-                {currentUser.role === "project_manager" ? (
+                {["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "") ? (
                   <>No projects yet — <Link href="/projects/new" className="text-foreground underline underline-offset-2">create one</Link></>
                 ) : (
                   "No projects yet."

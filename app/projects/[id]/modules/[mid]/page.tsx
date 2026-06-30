@@ -43,7 +43,7 @@ function formatDate(iso: string) {
 function deadlineStatus(deadline: string): { label: string; color: string } {
   const daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   if (daysLeft < 0) return { label: "Overdue", color: "text-destructive" };
-  if (daysLeft <= 7) return { label: `${daysLeft}d left`, color: "text-warning" };
+  if (daysLeft <= 3) return { label: `${daysLeft}d left`, color: "text-warning" };
   return { label: "On Track", color: "text-success" };
 }
 

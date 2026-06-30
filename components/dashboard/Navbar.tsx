@@ -33,6 +33,15 @@ function formatRole(role: string): string {
     .join(" ");
 }
 
+// Exact match misses nested routes (e.g. /projects/[id] wouldn't highlight
+// "Projects"). startsWith(href + "/") covers nested routes while the bare
+// equality check still covers the exact route itself, without false-matching
+// an unrelated route that merely shares a prefix (e.g. "/projects" vs a
+// hypothetical "/projects-archive").
+function isLinkActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Navbar({ userName, userRole }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -71,7 +80,7 @@ export function Navbar({ userName, userRole }: NavbarProps) {
         {/* Center — Nav links (desktop only) */}
         <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
           {navLinks.map((link) => {
-            const isActive = pathname === link.href;
+            const isActive = isLinkActive(pathname, link.href);
             return (
               <Link
                 key={link.href}
@@ -163,7 +172,7 @@ export function Navbar({ userName, userRole }: NavbarProps) {
         >
           <ul className="flex flex-col gap-1">
             {navLinks.map((link) => {
-              const isActive = pathname === link.href;
+              const isActive = isLinkActive(pathname, link.href);
               return (
                 <li key={link.href}>
                   <Link

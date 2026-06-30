@@ -154,10 +154,10 @@ Last updated: 2026-06-28
 ### Dashboard — ModulesTable
 
 File: `components/dashboard/ModulesTable.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 **Pattern notes:**
-Table wrapped in `overflow-x-auto` for mobile. Header cells use `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`. Status badges use `rounded-md px-2.5 py-1 text-[10px] font-semibold` with token bg/text pairs per status. Progress bars are `h-1.5 w-24 rounded-full`. Urgent deadlines use `text-destructive`.
+Table wrapped in `overflow-x-auto` for mobile. Header cells use `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`. Status badges use `rounded-md px-2.5 py-1 text-[10px] font-semibold` with token bg/text pairs per status. Progress bars are `h-1.5 w-24 rounded-full`. Urgent deadlines use `text-destructive` (now triggered at ≤3 days left, matching project-overview.md's spec — was 7). Rows are clickable to the module detail page: since `<a>` can't legally wrap a `<tr>`, each `<td>` gets `className="p-0"` and its own full-bleed `<Link className="block px-* py-*">` instead of one Link around the row — same pattern as `components/projects/ModulesList.tsx`'s grid-based rows, adapted for a real `<table>`.
 
 ---
 
@@ -283,14 +283,13 @@ Last updated: 2026-06-30
 | Member avatar | `size-9 rounded-full bg-foreground text-card text-[11px] font-bold` |
 | Role select | `appearance-none rounded-lg border border-border bg-card px-3 py-1.5 pr-8 text-sm focus:border-brand-primary` |
 | Active badge | `rounded-full px-2.5 py-1 text-xs font-medium bg-success-light text-success` |
-| Pending badge | `rounded-full px-2.5 py-1 text-xs font-medium bg-warning-light text-warning` |
 | Remove button | `text-sm font-medium text-destructive hover:opacity-75` |
 | Invite button | `rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-card hover:opacity-90` |
 | Regenerate link button | `text-xs font-medium text-muted-foreground hover:text-destructive disabled:opacity-50` |
 | Remove-member AlertDialog | shadcn `components/ui/alert-dialog.tsx` — `AlertDialogAction variant="destructive"` |
 
 **Pattern notes:**
-Server Component (`app/team/page.tsx`) fetches from `organizationMembers` + `organizations` for the current user's org, derives stats (members, active, owners, leadsAndPMs), derives `inviteBase` from `lib/get-request-origin.ts` (not `NEXT_PUBLIC_APP_URL`), and only includes `initialInviteCode` in the props when `currentUser.role === "owner"` — non-owners get `null`, so the code never reaches the client payload (not just CSS-hidden). Client Component handles: search filter state, filter tab state, role dropdown (disabled for owners/self, hidden for users without `CAN_CHANGE_ROLES`), remove button (hidden for owners/self, visible only to `CAN_REMOVE_MEMBERS`), the "+ Invite member" button and invite modal (hidden entirely unless `canInvite`), and "Regenerate link" (owner-only, calls `rotateInviteCode`, dedicated `isRotating` flag — not the shared `isPending` — so the label doesn't lie about what's in flight). Role dropdown uses a native `<select>` with `appearance-none` and an overlaid `ChevronDown` icon. Owner rows show a read-only role label instead of a dropdown. Member removal uses a shadcn `AlertDialog` (single dialog instance, driven by a `memberToRemove: { id, name } | null` state) instead of the native `confirm()` — Radix's `AlertDialogAction`/`AlertDialogCancel` both close the dialog automatically on click (they render as `DialogPrimitive.Close`), so the confirm click fires the removal and visually dismisses the dialog in the same tick; the result surfaces afterward via toast.
+Server Component (`app/team/page.tsx`) fetches from `organizationMembers` + `organizations` for the current user's org, derives stats (members, active, owners, leadsAndPMs), derives `inviteBase` from `lib/get-request-origin.ts` (not `NEXT_PUBLIC_APP_URL`), and only includes `initialInviteCode` in the props when `currentUser.role === "owner"` — non-owners get `null`, so the code never reaches the client payload (not just CSS-hidden). Filter tabs are `"all" | "active"` only — there's no "Pending" tab (removed; it could never match anything since invite-link joins grant immediate full membership, no approval step ever produces a pending member). Client Component handles: search filter state, filter tab state, role dropdown (disabled for owners/self, hidden for users without `CAN_CHANGE_ROLES`), remove button (hidden for owners/self, visible only to `CAN_REMOVE_MEMBERS`), the "+ Invite member" button and invite modal (hidden entirely unless `canInvite`), and "Regenerate link" (owner-only, calls `rotateInviteCode`, dedicated `isRotating` flag — not the shared `isPending` — so the label doesn't lie about what's in flight). Role dropdown uses a native `<select>` with `appearance-none` and an overlaid `ChevronDown` icon. Owner rows show a read-only role label instead of a dropdown. Member removal uses a shadcn `AlertDialog` (single dialog instance, driven by a `memberToRemove: { id, name } | null` state) instead of the native `confirm()` — Radix's `AlertDialogAction`/`AlertDialogCancel` both close the dialog automatically on click (they render as `DialogPrimitive.Close`), so the confirm click fires the removal and visually dismisses the dialog in the same tick; the result surfaces afterward via toast.
 
 ---
 
