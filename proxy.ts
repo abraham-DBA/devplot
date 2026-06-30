@@ -14,21 +14,31 @@ export async function proxy(request: NextRequest) {
   const user: SessionUser | undefined = session?.user;
   const onboardingCompleted = user?.onboardingCompleted ?? false;
 
+  const isJoinRoute = pathname.startsWith("/join");
+
   const isProtected =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/projects") ||
     pathname.startsWith("/profile") ||
-    pathname.startsWith("/onboarding");
+    pathname.startsWith("/team") ||
+    pathname.startsWith("/onboarding") ||
+    isJoinRoute;
 
   if (!isAuthenticated && isProtected) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const loginUrl = new URL("/login", request.url);
+    if (isJoinRoute) loginUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
-  if (isAuthenticated && !onboardingCompleted && isProtected && pathname !== "/onboarding") {
+  if (isAuthenticated && !onboardingCompleted && isProtected && pathname !== "/onboarding" && !isJoinRoute) {
     return NextResponse.redirect(new URL("/onboarding", request.url));
   }
 
   if (isAuthenticated && onboardingCompleted && pathname === "/onboarding") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  if (isAuthenticated && onboardingCompleted && isJoinRoute) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

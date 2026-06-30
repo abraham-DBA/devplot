@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { projects, modules, blockerLogs, activityLogs, user } from "@/lib/schema";
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, inArray, desc, and } from "drizzle-orm";
+import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ScheduleAlert } from "@/components/projects/ScheduleAlert";
 import { ModulesList } from "@/components/projects/ModulesList";
@@ -56,10 +57,15 @@ export default async function ProjectDetailPage({
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
-  const currentUser = session.user;
+  const currentUser: SessionUser = session.user;
+  const orgId = currentUser.organizationId;
+  if (!orgId) redirect("/onboarding");
 
-  // Fetch project
-  const [project] = await db.select().from(projects).where(eq(projects.id, id));
+  // Fetch project — scoped to org so users can't access other orgs' projects by ID
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, id), eq(projects.organizationId, orgId)));
   if (!project) notFound();
 
   // Fetch modules ordered by deadline (ascending — earliest due first)

@@ -6,9 +6,9 @@ Update this file after every completed phase.
 
 ## Current Status
 
-**Phase:** Phase 9 — Verification & Deployment
-**Last completed:** All verification checks passed — lint clean (3 `Date.now()` impurity errors fixed), production build clean (16 routes, TypeScript strict pass), 16/16 unit tests pass, security audit clean (no hardcoded secrets, no raw SQL, `.env*` gitignored, no `NEXT_PUBLIC_` on secret keys), access control verified (proxy gates `/dashboard`, `/projects`, `/profile`, `/onboarding` — unauthenticated → `/login`, incomplete onboarding → `/onboarding`).
-**Next:** Application is complete and production-ready.
+**Phase:** Phase 11 — Multi-Tenant Organization Layer
+**Last completed:** Invite gated to owner-only — `app/team/page.tsx` only passes the real `inviteCode` to `TeamClient` when `currentUser.role === "owner"` (non-owners get `null`, so the code never reaches the client payload); "+ Invite member" button and invite modal are hidden for non-owners (`canInvite` check). Team page visibility, role changes, and member removal remain open to PM/team_lead as before — only invite-link access was restricted. Signup redirect chain fix — first-time invitees no longer lose their invite. `redirect` query param now flows `/join/[code]` → `/login?redirect=...` → `/signup?redirect=...` (footer links carry it both directions) → `SignupForm` uses it for both email signup and OAuth `callbackURL` instead of hardcoded `/onboarding`, so a brand-new user signing up via an invite link lands back on the join page instead of creating their own org. Invite link rotation — `rotateInviteCode` action (owner-only, generates new 16-char hex code, invalidates old link), "Regenerate link" button in invite modal (owner-only, confirmation dialog, dedicated `isRotating` flag, `inviteBase`+`inviteCode` props replace fragile URL regex). Post-review bug fixes — (1) redirect() moved outside try/catch in completeOnboarding and joinOrganization (Next.js NEXT_REDIRECT swallow fix); (2) joinOrganization existing-membership check now org-scoped (was missing organizationId filter); (3) updateMemberRole and removeMember wrapped in db.transaction() for atomicity; (4) updateProfile syncs organizationMembers.role in same transaction; (5) ProfileForm shows read-only Owner badge instead of editable role cards for workspace owners; (6) removeMember modules/blockers check org-scoped via innerJoin with projects; all as SessionUser type assertions replaced with type annotations. TypeScript strict pass — 0 errors.
+**Next:** Application is production-ready with full org isolation and no known bugs.
 
 ---
 
@@ -49,6 +49,22 @@ Update this file after every completed phase.
 
 ### Phase 8 — Profile & Settings
 - [x] Profile page `/profile` — session-gated, real DB queries. Avatar + display name + email header, editable Display Name field (email read-only), role selector (3 cards: Developer / Team Lead / Project Manager, selected card highlighted), Connected Accounts section (Google + GitHub with connected/not-connected state from `account` table), Save changes / Cancel buttons (disabled until dirty). Right sidebar shows owned modules with project name, progress %, and status badge. `updateProfile` Server Action in `actions/users.ts` validates name + role, updates `user` table, revalidates `/profile` and `/dashboard`.
+
+### Phase 10 — Team Page
+
+- [x] Team page `/team` — session-gated, real DB queries (organizationMembers scoped to org). Lists org members with avatar initials, role dropdown (inline update via `updateMemberRole` — disabled for owners and non-authorized roles), Active status badge, joined date. Four stat cards: Members, Active, Owners, Leads & PMs. Search by name/email/role + filter tabs (All/Active/Pending). Remove button (guards: no assigned modules, no unresolved blockers, RBAC check, can't remove owner or self). Invite modal shows shareable `/join/[code]` link with copy button. "Team" nav link in Navbar; `/team` + `/join` routes in proxy.
+
+### Phase 11 — Multi-Tenant Organization Layer
+
+- [x] Schema: `organizations`, `organizationMembers` tables; `organizationId` on `projects`, `activityLogs`, `user`
+- [x] Auth: `organizationId` added to Better Auth `additionalFields` (available in session without extra DB call)
+- [x] Migration: `npx drizzle-kit push --force` — clean; seed script updated with org row + `organizationId` on all projects
+- [x] Onboarding redesigned: `CompanyDetailsForm` (name, description, industry, size) replaces `RoleSelector`; `completeOnboarding` creates org + org_member + sets owner role in a single transaction
+- [x] Join flow: `/join/[code]` server page validates invite code, `JoinOrgForm` client component selects role, `joinOrganization` action joins org in transaction
+- [x] Proxy: `/join` routes added to protected set; exempt from onboarding redirect; already-onboarded users redirected to dashboard; unauthenticated users get `?redirect=/join/[code]` on login URL
+- [x] Login: `?redirect=` param support (sanitized, relative-only) in `app/login/page.tsx` + `LoginForm` prop
+- [x] Data isolation: all dashboard/projects/modules pages filter by `session.user.organizationId`; guard redirects to `/onboarding` if no orgId; `actions/projects.ts` includes `organizationId` in insert; `actions/modules.ts` verifies parent project belongs to org; `activityLogs` inserts include `organizationId`
+- [x] Team page overhaul: fetches from `organizationMembers`, `actions/team.ts` fully secured (auth check, org scope, RBAC, prevent owner/self removal, reset removed user so they re-enter onboarding)
 
 ### Phase 9 — Verification & Deployment
 - [x] `npm run lint` — clean. Fixed 3 `Date.now()` React purity errors in `dashboard/page.tsx`, `projects/[id]/page.tsx`, `projects/[id]/modules/new/page.tsx`

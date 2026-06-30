@@ -13,6 +13,7 @@ type NavbarProps = {
 const navLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
+  { href: "/team", label: "Team" },
   { href: "/profile", label: "Profile" },
 ];
 

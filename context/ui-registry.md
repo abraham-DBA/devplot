@@ -257,3 +257,68 @@ Last updated: 2026-06-28
 
 **Pattern notes:**
 Event rows use `divide-y divide-border`. Each row has a colored `size-2 rounded-full` dot (`bg-success`, `bg-warning`, `bg-muted-foreground`). Actor and target are `font-semibold`. Project + timestamp are `text-xs text-muted-foreground`.
+
+---
+
+### Team Page
+
+File: `app/team/page.tsx`, `components/team/TeamClient.tsx`
+Last updated: 2026-06-29
+
+| Property | Class |
+| --- | --- |
+| Page eyebrow | `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground` |
+| Page h1 | `text-[32px] font-bold leading-tight text-foreground` |
+| Stat card container | `rounded-xl border border-border bg-card p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+| Stat value | `text-[32px] font-semibold leading-10 text-brand-primary` |
+| Search input | `h-10 w-72 rounded-lg border border-border bg-card px-3 text-sm focus:border-brand-primary focus:ring-1` |
+| Filter tab active | `rounded-md px-3 py-1 text-xs font-semibold bg-foreground text-card` |
+| Filter tab inactive | `rounded-md px-3 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground` |
+| Table header cell | `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground` |
+| Member avatar | `size-9 rounded-full bg-foreground text-card text-[11px] font-bold` |
+| Role select | `appearance-none rounded-lg border border-border bg-card px-3 py-1.5 pr-8 text-sm focus:border-brand-primary` |
+| Active badge | `rounded-full px-2.5 py-1 text-xs font-medium bg-success-light text-success` |
+| Pending badge | `rounded-full px-2.5 py-1 text-xs font-medium bg-warning-light text-warning` |
+| Remove button | `text-sm font-medium text-destructive hover:opacity-75` |
+| Invite button | `rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-card hover:opacity-90` |
+
+**Pattern notes:**
+Server Component (`app/team/page.tsx`) fetches from `organizationMembers` + `organizations` for the current user's org, derives stats (members, active, owners, leadsAndPMs), builds `inviteLink = /join/[inviteCode]`, and passes typed `Member[]` + stats + `inviteLink` + `currentUserRole` to `TeamClient`. Client Component handles: search filter state, filter tab state, role dropdown (disabled for owners/self, hidden for users without `CAN_CHANGE_ROLES`), remove button (hidden for owners/self, visible only to `CAN_REMOVE_MEMBERS`), invite modal showing the shareable link with a "Copy" button (`navigator.clipboard.writeText`). Role dropdown uses a native `<select>` with `appearance-none` and an overlaid `ChevronDown` icon. Owner rows show a read-only role label instead of a dropdown.
+
+---
+
+### Onboarding — CompanyDetailsForm
+
+File: `components/onboarding/CompanyDetailsForm.tsx`
+Last updated: 2026-06-29
+
+| Property | Class |
+| --- | --- |
+| Label | `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground` |
+| Text input / textarea | `h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary` |
+| Industry select | same as input + `cursor-pointer appearance-none pr-8` |
+| Size button (selected) | `rounded-lg border border-brand-primary bg-brand-primary text-card text-sm font-semibold` |
+| Size button (unselected) | `rounded-lg border border-border bg-card text-foreground text-sm font-medium hover:border-brand-secondary` |
+| Submit button | `mt-2 h-11 w-full rounded-lg bg-foreground text-sm font-bold text-card hover:bg-brand-primary disabled:opacity-50` |
+| Field error | `mt-1 text-xs text-destructive` |
+
+**Pattern notes:**
+`"use client"` component. Calls `completeOnboarding({ name, description, industry, size })` server action. Uses `useTransition` for pending state, `useState<Record<string, string>>` for field-level errors. On server error: `toast.error`. On success the action redirects — no client-side redirect needed. Same two-column split layout as Auth screens (dark left brand panel, white right form panel).
+
+---
+
+### Onboarding — JoinOrgForm
+
+File: `components/onboarding/JoinOrgForm.tsx`
+Last updated: 2026-06-29
+
+| Property | Class |
+| --- | --- |
+| Role card (selected) | `border-brand-primary ring-1 ring-brand-primary rounded-xl border bg-card p-5` |
+| Role card (unselected) | `border-border hover:border-brand-secondary rounded-xl border bg-card p-5` |
+| Role icon (selected) | `border-brand-primary bg-brand-primary text-card size-9 rounded-lg border` |
+| Role icon (unselected) | `border-border bg-background text-muted-foreground size-9 rounded-lg border` |
+| Submit button | `mt-2 h-11 w-full rounded-lg bg-foreground text-sm font-bold text-card hover:bg-brand-primary disabled:opacity-50` |
+
+**Pattern notes:**
+Props: `{ inviteCode: string; orgName: string }`. Three role cards (developer, team_lead, project_manager). Calls `joinOrganization(inviteCode, selectedRole)`. Uses `useTransition`. Same two-column split layout as onboarding. Server page (`app/join/[code]/page.tsx`) validates invite code against DB — shows graceful "Invalid invite link" card if code not found. Unauthenticated users redirected to `/login?redirect=/join/[code]`; already-onboarded users redirected to `/dashboard`.

@@ -1,13 +1,13 @@
 "use client";
 
-import { useTransition, useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { completeOnboarding } from "@/actions/users";
+import { joinOrganization } from "@/actions/users";
 
-type Role = "developer" | "team_lead" | "project_manager";
+type MemberRole = "developer" | "team_lead" | "project_manager";
 
 type RoleOption = {
-  value: Role;
+  value: MemberRole;
   label: string;
   description: string;
   icon: string;
@@ -34,14 +34,19 @@ const roles: RoleOption[] = [
   },
 ];
 
-export function RoleSelector() {
-  const [selected, setSelected] = useState<Role | null>(null);
+type Props = {
+  inviteCode: string;
+  orgName: string;
+};
+
+export function JoinOrgForm({ inviteCode, orgName }: Props) {
+  const [selected, setSelected] = useState<MemberRole | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function handleContinue() {
+  function handleJoin() {
     if (!selected) return;
     startTransition(async () => {
-      const result = await completeOnboarding(selected);
+      const result = await joinOrganization(inviteCode, selected);
       if (result && !result.success) {
         toast.error(result.error ?? "Something went wrong. Please try again.");
       }
@@ -93,11 +98,11 @@ export function RoleSelector() {
 
       <button
         type="button"
-        onClick={handleContinue}
+        onClick={handleJoin}
         disabled={!selected || isPending}
         className="mt-2 h-11 w-full rounded-lg bg-foreground text-sm font-bold text-card transition-colors hover:bg-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isPending ? "Saving…" : "Continue to DevFlow"}
+        {isPending ? "Joining…" : `Join ${orgName}`}
       </button>
     </div>
   );

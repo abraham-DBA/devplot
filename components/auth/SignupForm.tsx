@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 
-export function SignupForm() {
+type Props = {
+  redirectTo?: string;
+};
+
+export function SignupForm({ redirectTo = "/onboarding" }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -29,12 +33,12 @@ export function SignupForm() {
     }
 
     setLoading(false);
-    router.push("/onboarding");
+    router.push(redirectTo);
   }
 
   async function handleGoogleSignIn() {
     try {
-      await authClient.signIn.social({ provider: "google", callbackURL: "/onboarding" });
+      await authClient.signIn.social({ provider: "google", callbackURL: redirectTo });
     } catch {
       toast.error("Could not connect to Google. Please try again.");
     }
@@ -42,7 +46,7 @@ export function SignupForm() {
 
   async function handleGitHubSignIn() {
     try {
-      await authClient.signIn.social({ provider: "github", callbackURL: "/onboarding" });
+      await authClient.signIn.social({ provider: "github", callbackURL: redirectTo });
     } catch {
       toast.error("Could not connect to GitHub. Please try again.");
     }

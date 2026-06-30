@@ -2,7 +2,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { RoleSelector } from "@/components/onboarding/RoleSelector";
+import { CompanyDetailsForm } from "@/components/onboarding/CompanyDetailsForm";
 import type { SessionUser } from "@/lib/auth-types";
 
 export default async function OnboardingPage() {
@@ -11,8 +11,6 @@ export default async function OnboardingPage() {
 
   const user: SessionUser = session.user;
   if (user.onboardingCompleted) redirect("/dashboard");
-
-  const firstName = user.name.split(" ")[0];
 
   return (
     <main className="grid h-screen overflow-hidden bg-card text-foreground lg:grid-cols-2">
@@ -27,33 +25,33 @@ export default async function OnboardingPage() {
 
         <div className="max-w-[520px]">
           <p className="font-mono text-xs font-semibold uppercase text-brand-secondary">
-            One last step
+            Set up your organization
           </p>
           <p className="mt-5 text-xl font-bold leading-[1.3] text-card lg:text-[26px]">
-            Your role shapes how DevFlow presents your workspace — module ownership, health
-            alerts, and team views are all tailored to it.
+            Your team&apos;s home in DevFlow — create your workspace and invite teammates with a
+            single link.
           </p>
           <p className="mt-5 text-sm font-medium leading-5 text-brand-secondary">
-            You can change this later in your profile settings.
+            You&apos;ll be the workspace owner. Your colleagues join by picking their role.
           </p>
         </div>
 
         <p className="font-mono text-xs text-brand-secondary">&copy; 2026 DevFlow</p>
       </section>
 
-      {/* Right — role picker */}
+      {/* Right — company details form */}
       <section className="flex h-screen items-center justify-center overflow-y-auto bg-card px-6 py-8 sm:px-10 lg:px-14">
         <div className="w-full max-w-[420px]">
           <header className="mb-7">
             <h1 className="text-2xl font-bold leading-tight text-foreground">
-              Hey {firstName}, what&apos;s your role?
+              Let&apos;s set up your workspace
             </h1>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Pick the one that best describes how you work.
+              Tell us about your company so your team knows where they&apos;re joining.
             </p>
           </header>
 
-          <RoleSelector />
+          <CompanyDetailsForm />
         </div>
       </section>
     </main>

@@ -44,13 +44,18 @@ type CreateModuleInput = {
   progress: number;
 };
 
+const CAN_MANAGE_MODULES = ["owner", "team_lead", "project_manager"] as const;
+
 export async function createModule(
   input: CreateModuleInput,
 ): Promise<{ success: boolean; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
-  if (!["team_lead", "project_manager"].includes(session.user.role ?? ""))
+  if (!CAN_MANAGE_MODULES.includes(session.user.role as (typeof CAN_MANAGE_MODULES)[number]))
     return { success: false, error: "Only team leads and project managers can create modules." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
 
   const { projectId, name, description, assignedDeveloperId, deadline, status, progress } = input;
 
@@ -60,6 +65,13 @@ export async function createModule(
   if (!deadline) return { success: false, error: "Deadline is required." };
   if (!VALID_STATUSES.includes(status)) return { success: false, error: "Invalid status." };
   if (progress < 0 || progress > 100) return { success: false, error: "Progress must be 0–100." };
+
+  // Verify project belongs to this org
+  const [proj] = await db
+    .select({ organizationId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  if (!proj || proj.organizationId !== orgId) return { success: false, error: "Project not found." };
 
   const id = crypto.randomUUID();
 
@@ -80,6 +92,7 @@ export async function createModule(
     await db.insert(activityLogs).values({
       id: crypto.randomUUID(),
       projectId,
+      organizationId: orgId,
       message: `${session.user.name} created module ${name.trim()}`,
       createdAt: new Date(),
     });
@@ -110,7 +123,8 @@ export async function updateModuleProgress(
   if (!VALID_STATUSES.includes(status)) return { success: false, error: "Invalid status." };
 
   try {
-    const [mod] = await db.select({ projectId: modules.projectId, name: modules.name })
+    const [mod] = await db
+      .select({ projectId: modules.projectId, name: modules.name })
       .from(modules)
       .where(eq(modules.id, moduleId));
     if (!mod) return { success: false, error: "Module not found." };
@@ -122,6 +136,7 @@ export async function updateModuleProgress(
     await db.insert(activityLogs).values({
       id: crypto.randomUUID(),
       projectId: mod.projectId,
+      organizationId: session.user.organizationId ?? undefined,
       message: `${session.user.name} updated progress to ${progress}% on ${mod.name}`,
       createdAt: new Date(),
     });
@@ -175,6 +190,7 @@ export async function addNote(
     await db.insert(activityLogs).values({
       id: crypto.randomUUID(),
       projectId: mod.projectId,
+      organizationId: session.user.organizationId ?? undefined,
       message: `${session.user.name} added technical note to module`,
       createdAt: new Date(),
     });
@@ -222,6 +238,7 @@ export async function reportBlocker(
     await db.insert(activityLogs).values({
       id: crypto.randomUUID(),
       projectId: mod.projectId,
+      organizationId: session.user.organizationId ?? undefined,
       message: `${session.user.name} flagged blocker on ${mod.name}`,
       createdAt: new Date(),
     });

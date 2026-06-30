@@ -78,13 +78,16 @@ export default async function DashboardPage() {
   if (!session?.user) redirect("/login");
 
   const currentUser: SessionUser = session.user;
+  const orgId = currentUser.organizationId;
+  if (!orgId) redirect("/onboarding");
+
   const firstName = currentUser.name.split(" ")[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
-  // ── Fetch all projects ────────────────────────────────────────────────────
+  // ── Fetch org projects ────────────────────────────────────────────────────
 
-  const allProjects = await db.select().from(projects);
+  const allProjects = await db.select().from(projects).where(eq(projects.organizationId, orgId));
 
   // ── Fetch all modules ─────────────────────────────────────────────────────
 
@@ -108,6 +111,7 @@ export default async function DashboardPage() {
   const recentActivity = await db
     .select()
     .from(activityLogs)
+    .where(eq(activityLogs.organizationId, orgId))
     .orderBy(desc(activityLogs.createdAt))
     .limit(30);
 

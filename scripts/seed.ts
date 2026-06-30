@@ -8,6 +8,8 @@ const db = drizzle(pool, { schema });
 
 // ── IDs ──────────────────────────────────────────────────────────────────────
 
+const ORG_ID = "org-devflow-seed-001";
+
 const PROJECT = {
   atlas:     "proj-atlas-001",
   loop:      "proj-loop-001",
@@ -72,12 +74,28 @@ async function seed() {
       .onConflictDoNothing();
   }
 
+  // ── Organization ────────────────────────────────────────────────────────
+  await db
+    .insert(schema.organizations)
+    .values({
+      id: ORG_ID,
+      name: "DevFlow Demo Co.",
+      description: "Seed organization for development and demos.",
+      industry: "Technology",
+      size: "11-50",
+      ownerId: USER.abraham,
+      inviteCode: "seed-invite-001",
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing();
+
   // ── Projects ────────────────────────────────────────────────────────────
   await db
     .insert(schema.projects)
     .values([
       {
         id: PROJECT.atlas,
+        organizationId: ORG_ID,
         name: "Atlas Payments Platform",
         description:
           "Multi-currency merchant payments stack with reconciliation, refunds, and dispute workflows.",
@@ -91,6 +109,7 @@ async function seed() {
       },
       {
         id: PROJECT.loop,
+        organizationId: ORG_ID,
         name: "Loop Customer Portal",
         description:
           "Self-serve customer portal with usage dashboards, invoices, and team management.",
@@ -104,6 +123,7 @@ async function seed() {
       },
       {
         id: PROJECT.northstar,
+        organizationId: ORG_ID,
         name: "Northstar Admin Console",
         description:
           "Internal admin tool for support agents — account search, impersonation, audit trail.",
@@ -117,6 +137,7 @@ async function seed() {
       },
       {
         id: PROJECT.harbor,
+        organizationId: ORG_ID,
         name: "Harbor Mobile SDK",
         description: "iOS + Android client SDK for embedding Atlas payment flows.",
         startDate: "2026-06-01",

@@ -66,14 +66,19 @@ export default async function ProfilePage() {
     { provider: "github" as const, connected: connectedProviders.has("github") },
   ];
 
-  const userRole = (currentUser.role ?? "developer") as
-    | "developer"
-    | "team_lead"
-    | "project_manager";
+  const isOwner = currentUser.role === "owner";
+  const memberRole = (
+    isOwner || !currentUser.role || currentUser.role === "owner"
+      ? "developer"
+      : currentUser.role
+  ) as "developer" | "team_lead" | "project_manager";
+
+  // Owners display as project_manager in the Navbar (closest permission tier)
+  const navbarRole = isOwner ? "project_manager" : memberRole;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Navbar userName={currentUser.name} userRole={userRole} />
+      <Navbar userName={currentUser.name} userRole={navbarRole} />
 
       <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-6 lg:px-8">
         {/* Page header */}
@@ -89,10 +94,11 @@ export default async function ProfilePage() {
         <ProfileForm
           initialName={currentUser.name}
           email={currentUser.email}
-          initialRole={userRole}
+          initialRole={memberRole}
           initials={getInitials(currentUser.name)}
           ownedModules={ownedModuleRows}
           connectedAccounts={accountSummary}
+          isOwner={isOwner}
         />
       </main>
     </div>

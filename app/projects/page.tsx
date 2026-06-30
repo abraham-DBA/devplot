@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { projects, modules, blockerLogs, user } from "@/lib/schema";
 import { eq, inArray } from "drizzle-orm";
+import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ProjectsClient } from "@/components/projects/ProjectsClient";
 
@@ -11,19 +12,35 @@ export default async function ProjectsPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
 
-  const currentUser = session.user;
+  const currentUser: SessionUser = session.user;
+  const orgId = currentUser.organizationId;
+  if (!orgId) redirect("/onboarding");
 
-  // Fetch all projects
-  const allProjects = await db.select().from(projects).orderBy(projects.createdAt);
+  // Fetch org projects
+  const allProjects = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.organizationId, orgId))
+    .orderBy(projects.createdAt);
 
   // Fetch all modules (for counts)
-  const allModules = await db.select().from(modules);
+  const allModules =
+    allProjects.length > 0
+      ? await db
+          .select()
+          .from(modules)
+          .where(inArray(modules.projectId, allProjects.map((p) => p.id)))
+      : [];
 
   // Fetch all unresolved blockers
-  const activeBlockers = await db
-    .select()
-    .from(blockerLogs)
-    .where(eq(blockerLogs.resolved, false));
+  const moduleIds = allModules.map((m) => m.id);
+  const activeBlockers =
+    moduleIds.length > 0
+      ? await db
+          .select()
+          .from(blockerLogs)
+          .where(eq(blockerLogs.resolved, false))
+      : [];
 
   // Collect all unique team member IDs across all projects
   const allMemberIds = [

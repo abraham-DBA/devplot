@@ -10,6 +10,8 @@ import { auth } from "@/lib/auth";
 const VALID_PRIORITIES = ["low", "medium", "high", "critical"] as const;
 type Priority = "low" | "medium" | "high" | "critical";
 
+const CAN_CREATE_PROJECT = ["owner", "project_manager"] as const;
+
 type CreateProjectInput = {
   name: string;
   description: string;
@@ -24,8 +26,11 @@ export async function createProject(
 ): Promise<{ success: boolean; error?: string }> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
-  if (session.user.role !== "project_manager")
+  if (!CAN_CREATE_PROJECT.includes(session.user.role as (typeof CAN_CREATE_PROJECT)[number]))
     return { success: false, error: "Only project managers can create projects." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found. Please complete onboarding." };
 
   const { name, description, startDate, endDate, priority, teamMembers } = input;
 
@@ -43,6 +48,7 @@ export async function createProject(
   try {
     await db.insert(projects).values({
       id,
+      organizationId: orgId,
       name: name.trim(),
       description: description.trim(),
       startDate,

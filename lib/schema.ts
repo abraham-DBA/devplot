@@ -1,4 +1,4 @@
-import { pgTable, text, integer, date, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, date, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // ─── Better Auth core tables ────────────────────────────────────────────────
@@ -11,6 +11,7 @@ export const user = pgTable("user", {
   image: text("image"),
   role: text("role").default("developer"),
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
+  organizationId: text("organization_id"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
@@ -55,10 +56,48 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at"),
 });
 
+// ─── Organization tables ─────────────────────────────────────────────────────
+
+export const organizations = pgTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  industry: text("industry").notNull(),
+  size: text("size")
+    .$type<"1-10" | "11-50" | "51-200" | "201-500" | "500+">()
+    .notNull(),
+  ownerId: text("owner_id")
+    .references(() => user.id, { onDelete: "restrict" })
+    .notNull(),
+  inviteCode: text("invite_code").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: text("user_id")
+      .references(() => user.id, { onDelete: "cascade" })
+      .notNull(),
+    role: text("role")
+      .$type<"owner" | "developer" | "team_lead" | "project_manager">()
+      .notNull(),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("org_member_unique_idx").on(table.organizationId, table.userId)],
+);
+
 // ─── Application tables ─────────────────────────────────────────────────────
 
 export const projects = pgTable("projects", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
   name: text("name").notNull(),
   description: text("description").notNull(),
   startDate: date("start_date").notNull(),
@@ -105,6 +144,7 @@ export const blockerLogs = pgTable("blocker_logs", {
 
 export const activityLogs = pgTable("activity_logs", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   message: text("message").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -112,7 +152,9 @@ export const activityLogs = pgTable("activity_logs", {
 
 // ─── Relations ───────────────────────────────────────────────────────────────
 
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ one, many }) => ({
+  organization: one(organizations, { fields: [user.organizationId], references: [organizations.id] }),
+  organizationMembers: many(organizationMembers),
   modules: many(modules),
   blockerLogs: many(blockerLogs),
   sessions: many(session),
@@ -127,7 +169,20 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
 }));
 
-export const projectsRelations = relations(projects, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
+  owner: one(user, { fields: [organizations.ownerId], references: [user.id] }),
+  members: many(organizationMembers),
+  projects: many(projects),
+  activityLogs: many(activityLogs),
+}));
+
+export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({
+  organization: one(organizations, { fields: [organizationMembers.organizationId], references: [organizations.id] }),
+  user: one(user, { fields: [organizationMembers.userId], references: [user.id] }),
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  organization: one(organizations, { fields: [projects.organizationId], references: [organizations.id] }),
   modules: many(modules),
   activityLogs: many(activityLogs),
 }));
@@ -144,5 +199,6 @@ export const blockerLogsRelations = relations(blockerLogs, ({ one }) => ({
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
+  organization: one(organizations, { fields: [activityLogs.organizationId], references: [organizations.id] }),
   project: one(projects, { fields: [activityLogs.projectId], references: [projects.id] }),
 }));

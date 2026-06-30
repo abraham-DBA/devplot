@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { modules, projects, blockerLogs, user } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ModuleDetailClient } from "@/components/modules/ModuleDetailClient";
 import { ReportBlockerButton } from "@/components/modules/ReportBlockerButton";
@@ -62,18 +63,20 @@ export default async function ModuleDetailPage({
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
-  const currentUser = session.user;
+  const currentUser: SessionUser = session.user;
+  const orgId = currentUser.organizationId;
+  if (!orgId) redirect("/onboarding");
 
-  // Fetch module
-  const [mod] = await db.select().from(modules).where(eq(modules.id, mid));
-  if (!mod || mod.projectId !== id) notFound();
-
-  // Fetch project name for breadcrumb
+  // Fetch project — scoped to org to prevent cross-org access via URL
   const [project] = await db
     .select({ id: projects.id, name: projects.name })
     .from(projects)
-    .where(eq(projects.id, id));
+    .where(and(eq(projects.id, id), eq(projects.organizationId, orgId)));
   if (!project) notFound();
+
+  // Fetch module — confirm it belongs to this project
+  const [mod] = await db.select().from(modules).where(eq(modules.id, mid));
+  if (!mod || mod.projectId !== id) notFound();
 
   // Fetch owner
   const [owner] = await db

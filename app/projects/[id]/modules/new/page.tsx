@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { projects, user } from "@/lib/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
+import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { CreateModuleForm } from "@/components/modules/CreateModuleForm";
 
@@ -17,13 +18,15 @@ export default async function NewModulePage({
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
-  const currentUser = session.user;
+  const currentUser: SessionUser = session.user;
+  const orgId = currentUser.organizationId;
+  if (!orgId) redirect("/onboarding");
 
-  // Confirm project exists
+  // Confirm project exists and belongs to this org
   const [project] = await db
     .select({ id: projects.id, name: projects.name, teamMembers: projects.teamMembers })
     .from(projects)
-    .where(eq(projects.id, id));
+    .where(and(eq(projects.id, id), eq(projects.organizationId, orgId)));
   if (!project) notFound();
 
   // Fetch team members as developer options
