@@ -10,6 +10,7 @@ type ModuleRow = {
   progress: number;
   deadline: string;
   deadlineUrgent: boolean;
+  atRisk?: boolean;
 };
 
 import Link from "next/link";
@@ -82,7 +83,16 @@ export function ModulesTable({ modules }: ModulesTableProps) {
                   <tr key={mod.id} className="hover:bg-background transition-colors">
                     <td className="p-0">
                       <Link href={href} className="block px-6 py-4">
-                        <p className="text-sm font-medium text-foreground">{mod.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium text-foreground">{mod.name}</p>
+                          {mod.atRisk && (
+                            <span
+                              title="Integration risk — depends on a blocked or overdue module"
+                              className="size-1.5 shrink-0 rounded-full bg-warning"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {mod.projectName} · {mod.assignee}
                         </p>

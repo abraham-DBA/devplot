@@ -3,13 +3,15 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { modules, projects, blockerLogs, user } from "@/lib/schema";
+import { modules, projects, blockerLogs, user, moduleDependencies } from "@/lib/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ModuleDetailClient } from "@/components/modules/ModuleDetailClient";
 import { ReportBlockerButton } from "@/components/modules/ReportBlockerButton";
 import { BlockerList } from "@/components/modules/BlockerList";
+import { ManageDependenciesModal } from "@/components/modules/ManageDependenciesModal";
+import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
 import type { NoteEntry } from "@/actions/modules";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked" | "completed";
@@ -113,6 +115,61 @@ export default async function ModuleDetailPage({
   const canEdit =
     currentUser.id === mod.assignedDeveloperId ||
     ["team_lead", "project_manager", "owner"].includes(currentUser.role ?? "");
+  // Reviewer must NOT be the assignee, even if they also hold a privileged role —
+  // mirrors actions/modules.ts's getReviewEligibility exactly to avoid client/server drift.
+  const canReview =
+    ["team_lead", "project_manager", "owner"].includes(currentUser.role ?? "") &&
+    currentUser.id !== mod.assignedDeveloperId;
+  // Declaring dependencies is an architecture decision — same role set as who
+  // can create modules, no assignee carve-out, mirroring actions/modules.ts's
+  // DEPENDENCY_MANAGER_ROLES exactly.
+  const canManageDependencies = ["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "");
+
+  // Dependency graph context — fetch every module + edge in the project so
+  // risk can be computed the same way recalculateProjectHealth does, plus
+  // this module's direct upstream/downstream relationships for display.
+  const siblingModules = await db
+    .select({ id: modules.id, name: modules.name, status: modules.status, deadline: modules.deadline })
+    .from(modules)
+    .where(eq(modules.projectId, id));
+  const siblingNameMap = Object.fromEntries(siblingModules.map((m) => [m.id, m]));
+
+  const projectModuleIds = siblingModules.map((m) => m.id);
+  const allEdges =
+    projectModuleIds.length > 0
+      ? await db
+          .select({
+            id: moduleDependencies.id,
+            moduleId: moduleDependencies.moduleId,
+            dependsOnModuleId: moduleDependencies.dependsOnModuleId,
+          })
+          .from(moduleDependencies)
+          .where(inArray(moduleDependencies.moduleId, projectModuleIds))
+      : [];
+
+  const dependsOnEdges = allEdges.filter((e) => e.moduleId === mid);
+  const dependedOnByEdges = allEdges.filter((e) => e.dependsOnModuleId === mid);
+
+  const upstreamItems = dependsOnEdges.map((e) => {
+    const upstreamMod = siblingNameMap[e.dependsOnModuleId];
+    return {
+      dependencyId: e.id,
+      moduleId: e.dependsOnModuleId,
+      name: upstreamMod?.name ?? "Unknown module",
+      isBroken: upstreamMod ? isModuleBroken(upstreamMod) : false,
+    };
+  });
+  const downstreamItems = dependedOnByEdges.map((e) => ({
+    dependencyId: e.id,
+    moduleId: e.moduleId,
+    name: siblingNameMap[e.moduleId]?.name ?? "Unknown module",
+  }));
+
+  const dependencyOptions = siblingModules.filter((m) => m.id !== mid).map((m) => ({ id: m.id, name: m.name }));
+  const currentDependencies = dependsOnEdges.map((e) => ({ dependencyId: e.id, moduleId: e.dependsOnModuleId }));
+
+  const atRiskModuleIds = computeAtRiskModules(siblingModules, allEdges);
+  const isAtRisk = atRiskModuleIds.has(mid);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -143,12 +200,26 @@ export default async function ModuleDetailPage({
               >
                 {sc.label}
               </span>
+              {isAtRisk && (
+                <span className="inline-flex items-center rounded-md border border-warning/30 bg-warning-light px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-warning">
+                  Integration risk
+                </span>
+              )}
             </div>
             <p className="mt-1.5 text-sm text-muted-foreground">{mod.description}</p>
           </div>
 
-          {/* Report blocker — isolated client button, no SSR data needed */}
-          <ReportBlockerButton moduleId={mid} />
+          <div className="flex shrink-0 gap-3">
+            {canManageDependencies && (
+              <ManageDependenciesModal
+                moduleId={mid}
+                options={dependencyOptions}
+                currentDependencies={currentDependencies}
+              />
+            )}
+            {/* Report blocker — isolated client button, no SSR data needed */}
+            <ReportBlockerButton moduleId={mid} />
+          </div>
         </div>
 
         {/* Two-column layout */}
@@ -164,6 +235,7 @@ export default async function ModuleDetailPage({
               openBlockers={openBlockers}
               totalBlockers={allBlockers.length}
               canEdit={canEdit}
+              canReview={canReview}
             />
             <BlockerList blockers={blockerListItems} canResolve={canEdit} />
           </div>
@@ -200,6 +272,52 @@ export default async function ModuleDetailPage({
               </p>
               <p className="mt-2 text-lg font-semibold text-foreground">{formatDate(mod.deadline)}</p>
               <p className={`mt-0.5 text-xs font-medium ${dl.color}`}>{dl.label}</p>
+            </div>
+
+            {/* Dependencies */}
+            <div className="rounded-xl border border-border bg-card p-5 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Dependencies
+              </p>
+
+              <p className="mt-3 text-xs font-semibold text-muted-foreground">Depends on</p>
+              {upstreamItems.length === 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">Nothing — no upstream modules.</p>
+              ) : (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {upstreamItems.map((item) => (
+                    <Link
+                      key={item.dependencyId}
+                      href={`/projects/${id}/modules/${item.moduleId}`}
+                      className={[
+                        "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
+                        item.isBroken
+                          ? "border-destructive/20 bg-destructive-light text-destructive"
+                          : "border-border bg-background text-foreground hover:bg-card",
+                      ].join(" ")}
+                    >
+                      {item.name}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              <p className="mt-4 text-xs font-semibold text-muted-foreground">Depended on by</p>
+              {downstreamItems.length === 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">Nothing — no downstream modules.</p>
+              ) : (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {downstreamItems.map((item) => (
+                    <Link
+                      key={item.dependencyId}
+                      href={`/projects/${id}/modules/${item.moduleId}`}
+                      className="rounded-md border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-card"
+                    >
+                      {item.name}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Activity summary */}

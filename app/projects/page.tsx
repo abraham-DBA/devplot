@@ -2,12 +2,13 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects, modules, blockerLogs, user } from "@/lib/schema";
+import { projects, modules, blockerLogs, user, moduleDependencies } from "@/lib/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ProjectsClient } from "@/components/projects/ProjectsClient";
 import { calculateProjectHealth } from "@/lib/health";
+import { computeAtRiskModules } from "@/lib/dependency-risk";
 
 export default async function ProjectsPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -58,6 +59,20 @@ export default async function ProjectsPage() {
       : [];
   const userNameMap = Object.fromEntries(teamUsers.map((u) => [u.id, u.name]));
 
+  // Fetch dependency edges (org-wide, grouped per project below — edges only
+  // ever connect modules within the same project)
+  const allDependencyEdges =
+    moduleIds.length > 0
+      ? await db
+          .select({
+            moduleId: moduleDependencies.moduleId,
+            dependsOnModuleId: moduleDependencies.dependsOnModuleId,
+          })
+          .from(moduleDependencies)
+          .where(inArray(moduleDependencies.moduleId, moduleIds))
+      : [];
+  const moduleIdToProjectId = Object.fromEntries(allModules.map((m) => [m.id, m.projectId]));
+
   // Build module counts per project
   const modulesByProject = allModules.reduce<Record<string, typeof allModules>>(
     (acc, mod) => {
@@ -98,11 +113,14 @@ export default async function ProjectsPage() {
     // show a stale "on_track" badge here while the detail page (already live)
     // shows the correct at_risk/high_risk.
     const hasBlockedModule = mods.some((m) => m.status === "blocked");
+    const projectEdges = allDependencyEdges.filter((e) => moduleIdToProjectId[e.moduleId] === p.id);
+    const atRiskModuleIds = computeAtRiskModules(mods, projectEdges);
     const health = calculateProjectHealth({
       startDate: p.startDate,
       endDate: p.endDate,
       progress: p.progress,
       hasBlockedModule,
+      hasDependencyRisk: atRiskModuleIds.size > 0,
     });
     return {
       id: p.id,

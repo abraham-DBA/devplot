@@ -10,6 +10,7 @@ type ModuleRow = {
   progress: number;
   ownerName: string;
   deadline: string;
+  atRisk?: boolean;
 };
 
 type Props = {
@@ -91,7 +92,16 @@ export function ModulesList({ projectId, modules }: Props) {
               >
                 {/* Name + description */}
                 <div className="min-w-0 pr-4">
-                  <p className="text-sm font-semibold text-foreground">{mod.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-sm font-semibold text-foreground">{mod.name}</p>
+                    {mod.atRisk && (
+                      <span
+                        title="Integration risk — depends on a blocked or overdue module"
+                        className="size-1.5 shrink-0 rounded-full bg-warning"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{mod.description}</p>
                 </div>
 

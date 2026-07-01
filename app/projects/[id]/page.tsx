@@ -3,13 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { projects, modules, blockerLogs, activityLogs, user } from "@/lib/schema";
+import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies } from "@/lib/schema";
 import { eq, inArray, desc, and } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ScheduleAlert } from "@/components/projects/ScheduleAlert";
 import { ModulesList } from "@/components/projects/ModulesList";
 import { calculateProjectHealth } from "@/lib/health";
+import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
 
 type ProjectHealth = "on_track" | "at_risk" | "high_risk";
 
@@ -123,15 +124,31 @@ export default async function ProjectDetailPage({
           .where(inArray(user.id, teamMemberIds))
       : [];
 
+  // Fetch dependency edges for this project's modules
+  const dependencyEdges =
+    moduleIds.length > 0
+      ? await db
+          .select({
+            id: moduleDependencies.id,
+            moduleId: moduleDependencies.moduleId,
+            dependsOnModuleId: moduleDependencies.dependsOnModuleId,
+          })
+          .from(moduleDependencies)
+          .where(inArray(moduleDependencies.moduleId, moduleIds))
+      : [];
+  const moduleNameMap = Object.fromEntries(projectModules.map((m) => [m.id, m]));
+
   // ── Compute metrics ───────────────────────────────────────────────────────
 
   const hasBlockedModule = projectModules.some((m) => m.status === "blocked");
+  const atRiskModuleIds = computeAtRiskModules(projectModules, dependencyEdges);
 
   const health = calculateProjectHealth({
     startDate: project.startDate,
     endDate: project.endDate,
     progress: project.progress,
     hasBlockedModule,
+    hasDependencyRisk: atRiskModuleIds.size > 0,
   });
 
   // Time used %
@@ -210,6 +227,41 @@ export default async function ProjectDetailPage({
               progress={project.progress}
               hasBlockedModule={hasBlockedModule}
             />
+          </div>
+        )}
+
+        {/* Dependency chain */}
+        {dependencyEdges.length > 0 && (
+          <div className="mt-5 flex flex-col gap-2">
+            {dependencyEdges.map((edge) => {
+              const dependent = moduleNameMap[edge.moduleId];
+              const upstream = moduleNameMap[edge.dependsOnModuleId];
+              const upstreamBroken = upstream ? isModuleBroken(upstream) : false;
+              return (
+                <div
+                  key={edge.id}
+                  className={[
+                    "flex items-center gap-2 rounded-xl border p-4 text-sm",
+                    upstreamBroken
+                      ? "border-destructive/20 bg-destructive-light text-destructive"
+                      : "border-border bg-card text-foreground",
+                  ].join(" ")}
+                >
+                  <Link href={`/projects/${id}/modules/${edge.moduleId}`} className="font-semibold hover:underline">
+                    {dependent?.name ?? "Unknown module"}
+                  </Link>
+                  <span className={upstreamBroken ? "text-destructive" : "text-muted-foreground"}>depends on</span>
+                  <Link href={`/projects/${id}/modules/${edge.dependsOnModuleId}`} className="font-semibold hover:underline">
+                    {upstream?.name ?? "Unknown module"}
+                  </Link>
+                  {upstreamBroken && (
+                    <span className="ml-auto font-mono text-[10px] font-semibold uppercase tracking-wide">
+                      Upstream blocked
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -295,6 +347,7 @@ export default async function ProjectDetailPage({
                 progress: m.progress,
                 ownerName: ownerMap[m.assignedDeveloperId]?.name ?? "Unknown",
                 deadline: m.deadline,
+                atRisk: atRiskModuleIds.has(m.id),
               }))}
             />
           </div>

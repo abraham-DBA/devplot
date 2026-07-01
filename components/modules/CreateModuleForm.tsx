@@ -20,11 +20,17 @@ type DeveloperOption = {
   name: string;
 };
 
+type ModuleOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   projectId: string;
   developers: DeveloperOption[];
   currentUserId: string;
   defaultDeadline: string;
+  existingModules: ModuleOption[];
 };
 
 const STATUSES: { value: ModuleStatus; label: string }[] = [
@@ -39,6 +45,7 @@ export function CreateModuleForm({
   developers,
   currentUserId,
   defaultDeadline,
+  existingModules,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -52,6 +59,13 @@ export function CreateModuleForm({
   const [deadline, setDeadline] = useState(defaultDeadline);
   const [status, setStatus] = useState<ModuleStatus>("not_started");
   const [progress, setProgress] = useState(0);
+  const [dependsOnModuleIds, setDependsOnModuleIds] = useState<string[]>([]);
+
+  function toggleDependency(moduleId: string) {
+    setDependsOnModuleIds((prev) =>
+      prev.includes(moduleId) ? prev.filter((id) => id !== moduleId) : [...prev, moduleId],
+    );
+  }
 
   function handleSubmit() {
     startTransition(async () => {
@@ -63,6 +77,7 @@ export function CreateModuleForm({
         deadline,
         status,
         progress,
+        dependsOnModuleIds,
       });
       if (result?.error) {
         toast.error(result.error);
@@ -190,6 +205,39 @@ export function CreateModuleForm({
             className="mt-3 w-full"
           />
         </div>
+
+        {/* Depends on — only shown once the project has other modules to depend on */}
+        {existingModules.length > 0 && (
+          <div className="mt-6">
+            <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Depends On
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              This module won&apos;t be considered safe to ship until these are unblocked.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {existingModules.map((mod) => {
+                const isActive = dependsOnModuleIds.includes(mod.id);
+                return (
+                  <button
+                    key={mod.id}
+                    type="button"
+                    onClick={() => toggleDependency(mod.id)}
+                    disabled={isPending}
+                    className={[
+                      "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                      isActive
+                        ? "border-foreground bg-foreground text-card"
+                        : "border-border bg-card text-foreground hover:bg-background",
+                    ].join(" ")}
+                  >
+                    {mod.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right — tip + actions */}

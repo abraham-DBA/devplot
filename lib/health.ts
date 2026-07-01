@@ -5,11 +5,17 @@ export type HealthInput = {
   endDate: string;
   progress: number;
   hasBlockedModule?: boolean;
+  // True when a module in this project is fine on its own but depends
+  // (directly or transitively) on a module that's blocked or overdue —
+  // see lib/dependency-risk.ts. Only ever upgrades on_track to at_risk; it
+  // never downgrades a high_risk verdict from a direct block or schedule
+  // slippage, since a chain effect is one step removed from those.
+  hasDependencyRisk?: boolean;
   today?: string;
 };
 
 export function calculateProjectHealth(input: HealthInput): ProjectHealth {
-  const { startDate, endDate, progress, hasBlockedModule = false, today } = input;
+  const { startDate, endDate, progress, hasBlockedModule = false, hasDependencyRisk = false, today } = input;
 
   if (hasBlockedModule) return "high_risk";
 
@@ -24,6 +30,7 @@ export function calculateProjectHealth(input: HealthInput): ProjectHealth {
 
   if (timeUsed > progress + 20) return "high_risk";
   if (timeUsed > progress) return "at_risk";
+  if (hasDependencyRisk) return "at_risk";
   return "on_track";
 }
 

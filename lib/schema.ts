@@ -127,6 +127,7 @@ export const modules = pgTable("modules", {
   deadline: date("deadline").notNull(),
   technicalNotes: text("technical_notes").default("").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const blockerLogs = pgTable("blocker_logs", {
@@ -142,6 +143,21 @@ export const blockerLogs = pgTable("blocker_logs", {
   resolved: boolean("resolved").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const moduleDependencies = pgTable(
+  "module_dependencies",
+  {
+    id: text("id").primaryKey(),
+    moduleId: text("module_id")
+      .references(() => modules.id, { onDelete: "cascade" })
+      .notNull(),
+    dependsOnModuleId: text("depends_on_module_id")
+      .references(() => modules.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("module_dependency_unique_idx").on(table.moduleId, table.dependsOnModuleId)],
+);
 
 export const activityLogs = pgTable("activity_logs", {
   id: text("id").primaryKey(),
@@ -197,6 +213,11 @@ export const modulesRelations = relations(modules, ({ one, many }) => ({
 export const blockerLogsRelations = relations(blockerLogs, ({ one }) => ({
   module: one(modules, { fields: [blockerLogs.moduleId], references: [modules.id] }),
   reporter: one(user, { fields: [blockerLogs.reportedBy], references: [user.id] }),
+}));
+
+export const moduleDependenciesRelations = relations(moduleDependencies, ({ one }) => ({
+  module: one(modules, { fields: [moduleDependencies.moduleId], references: [modules.id] }),
+  dependsOn: one(modules, { fields: [moduleDependencies.dependsOnModuleId], references: [modules.id] }),
 }));
 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({

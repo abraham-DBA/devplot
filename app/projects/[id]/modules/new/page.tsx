@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { projects, user } from "@/lib/schema";
+import { projects, user, modules } from "@/lib/schema";
 import { eq, inArray, and } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
@@ -52,6 +52,13 @@ export default async function NewModulePage({
     .toISOString()
     .split("T")[0];
 
+  // Existing modules in this project — selectable as dependencies for the new one
+  const existingModules = await db
+    .select({ id: modules.id, name: modules.name })
+    .from(modules)
+    .where(eq(modules.projectId, id))
+    .orderBy(modules.name);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar userName={currentUser.name} userRole={currentUser.role ?? "developer"} />
@@ -82,6 +89,7 @@ export default async function NewModulePage({
             developers={developerOptions}
             currentUserId={currentUser.id}
             defaultDeadline={defaultDeadline}
+            existingModules={existingModules}
           />
         </div>
       </main>

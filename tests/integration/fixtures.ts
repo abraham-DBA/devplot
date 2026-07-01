@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
-import { organizations, organizationMembers, user, projects, modules, blockerLogs } from "@/lib/schema";
+import { organizations, organizationMembers, user, projects, modules, blockerLogs, moduleDependencies } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 
 const TEST_PREFIX = "test-";
@@ -87,6 +87,7 @@ export async function createTestModule(
   projectId: string,
   assignedDeveloperId: string,
   status: ModuleStatus = "not_started",
+  options?: { deadline?: string; progress?: number; updatedAt?: Date },
 ) {
   const id = TEST_PREFIX + randomUUID();
   await db.insert(modules).values({
@@ -95,11 +96,16 @@ export async function createTestModule(
     name: "Test Module",
     description: "Integration test fixture module",
     assignedDeveloperId,
-    progress: 0,
+    progress: options?.progress ?? 0,
     status,
-    deadline: "2026-12-31",
+    deadline: options?.deadline ?? "2026-12-31",
     technicalNotes: "",
     createdAt: new Date(),
+    // Explicitly pass updatedAt only when a test needs a backdated value
+    // (e.g. to simulate a stale module). When omitted, the DB DEFAULT now()
+    // supplies the current timestamp automatically, so no value is needed
+    // for the general "just create a module" case.
+    ...(options?.updatedAt ? { updatedAt: options.updatedAt } : {}),
   });
   return id;
 }
@@ -117,9 +123,38 @@ export async function createTestBlocker(moduleId: string, reportedBy: string, re
   return id;
 }
 
+export async function createTestDependency(moduleId: string, dependsOnModuleId: string) {
+  const id = TEST_PREFIX + randomUUID();
+  await db.insert(moduleDependencies).values({
+    id,
+    moduleId,
+    dependsOnModuleId,
+    createdAt: new Date(),
+  });
+  return id;
+}
+
+export async function getProjectHealth(projectId: string) {
+  const [project] = await db.select({ health: projects.health }).from(projects).where(eq(projects.id, projectId));
+  return project?.health;
+}
+
+export async function getModuleUpdatedAt(moduleId: string) {
+  const [mod] = await db.select({ updatedAt: modules.updatedAt }).from(modules).where(eq(modules.id, moduleId));
+  return mod?.updatedAt;
+}
+
 export async function getModuleStatus(moduleId: string) {
   const [mod] = await db.select({ status: modules.status }).from(modules).where(eq(modules.id, moduleId));
   return mod?.status;
+}
+
+export async function getModuleDetails(moduleId: string) {
+  const [mod] = await db
+    .select({ status: modules.status, progress: modules.progress, technicalNotes: modules.technicalNotes })
+    .from(modules)
+    .where(eq(modules.id, moduleId));
+  return mod;
 }
 
 export async function getBlockerResolved(blockerId: string) {

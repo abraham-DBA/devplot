@@ -90,7 +90,7 @@ Auth screens use a full-height two-column split on desktop: dark testimonial/bra
 ### Dashboard — Navbar
 
 File: `components/dashboard/Navbar.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 | Property | Class |
 | -------- | ----- |
@@ -101,6 +101,8 @@ Last updated: 2026-06-28
 | Inactive nav link | `font-medium text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5` |
 | Avatar | `size-8 rounded-full bg-foreground text-card text-[11px] font-bold` |
 | Mobile hamburger | `size-8 rounded-md text-muted-foreground md:hidden` — toggles a `border-t` drawer |
+
+`navLinks` is now 5 entries: Dashboard, **My Work** (new), Projects, Team, Profile — `ui-rules.md`'s documented "three main navigation links" was already stale before this change (Team was added in an earlier phase); not corrected here, just noting the doc/code gap persists.
 
 ---
 
@@ -161,7 +163,7 @@ File: `components/dashboard/ModulesTable.tsx`
 Last updated: 2026-06-30
 
 **Pattern notes:**
-Table wrapped in `overflow-x-auto` for mobile. Header cells use `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`. Status badges use `rounded-md px-2.5 py-1 text-[10px] font-semibold` with token bg/text pairs per status. Progress bars are `h-1.5 w-24 rounded-full`. Urgent deadlines use `text-destructive` (now triggered at ≤3 days left, matching project-overview.md's spec — was 7). Rows are clickable to the module detail page: since `<a>` can't legally wrap a `<tr>`, each `<td>` gets `className="p-0"` and its own full-bleed `<Link className="block px-* py-*">` instead of one Link around the row — same pattern as `components/projects/ModulesList.tsx`'s grid-based rows, adapted for a real `<table>`.
+Table wrapped in `overflow-x-auto` for mobile. Header cells use `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground`. Status badges use `rounded-md px-2.5 py-1 text-[10px] font-semibold` with token bg/text pairs per status. Progress bars are `h-1.5 w-24 rounded-full`. Urgent deadlines use `text-destructive` (now triggered at ≤3 days left, matching project-overview.md's spec — was 7). Rows are clickable to the module detail page: since `<a>` can't legally wrap a `<tr>`, each `<td>` gets `className="p-0"` and its own full-bleed `<Link className="block px-* py-*">` instead of one Link around the row — same pattern as `components/projects/ModulesList.tsx`'s grid-based rows, adapted for a real `<table>`. Optional `atRisk` prop renders a `size-1.5 rounded-full bg-warning` dot next to the module name — see Modules — ManageDependenciesModal entry below for the full dependency-risk picture.
 
 ---
 
@@ -197,6 +199,8 @@ Last updated: 2026-06-28
 | Progress bar | `h-1.5 rounded-full` — color matches status |
 | Owner avatar | `size-7 rounded-full bg-foreground text-card text-[9px] font-bold` |
 
+Optional `atRisk` prop on each row renders a `size-1.5 rounded-full bg-warning` dot next to the module name — see Modules — ManageDependenciesModal entry below.
+
 ---
 
 ### Projects — ProjectsClient
@@ -221,7 +225,7 @@ Client Component wraps search state + filter state. Server Component (`app/proje
 ### Modules — ModuleDetailClient
 
 File: `components/modules/ModuleDetailClient.tsx`
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
 | Property | Class |
 | -------- | ----- |
@@ -236,10 +240,17 @@ Last updated: 2026-06-28
 | Note badge — implementation | `border-border bg-background text-muted-foreground` |
 | Note badge — schema | `border-warning/30 bg-warning-light text-warning` |
 | Note badge — api | `border-brand-primary/20 bg-card text-brand-primary` |
+| Note badge — review | `border-destructive/20 bg-destructive-light text-destructive` |
 | Add note modal | `fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm` / inner `max-w-md rounded-xl border border-border bg-card p-6` |
+| Review banner | `rounded-lg border border-border bg-background p-3` |
+| Approve button | `rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-card hover:bg-brand-primary disabled:opacity-60` |
+| Request changes button | `rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-50` |
+| Request changes modal | same shape as Add note modal, destructive accent: `border-destructive/20`, submit button `bg-destructive` |
 
 **Pattern notes:**
 Progress slider uses `accent-foreground` for the thumb color (Tailwind 4 no-config approach). Notes stored as JSON array in `technicalNotes` text column — each entry has `{ id, type, title, body, createdAt }`. `isDirty` computed from initial vs current progress/status — Save button only activates when there are unsaved changes.
+
+**"Completed" is not in `STATUS_OPTIONS`** — it's only reachable via the Approve action, not pickable from the dropdown, including for leads/PM/owner (otherwise the review gate would be cosmetic). A conditional `<SelectItem value="completed">` is injected only when the module's *current* status is already `"completed"`, purely so an already-completed module doesn't render a blank/unmatched Select value — it's not a way to manually re-select Completed from another state. The Approve/Request Changes banner renders only when `savedStatus === "review" && canReview` (gated on the saved baseline, not the dirty in-flight `status`, so it doesn't flicker while someone fiddles with the dropdown pre-save). `canReview` excludes the assignee even if they also hold a privileged role — computed identically on the server (`app/projects/[id]/modules/[mid]/page.tsx`) and mirrored by `actions/modules.ts`'s `getReviewEligibility`, kept textually in sync to avoid client/server drift. `"review"`-type notes are created only by `requestChanges` — `NOTE_TYPES` (the manual "+ Add note" selector) deliberately excludes it.
 
 ---
 
@@ -277,6 +288,23 @@ Isolated `"use client"` component — lets the page Server Component render most
 
 ---
 
+### Modules — ManageDependenciesModal
+
+File: `components/modules/ManageDependenciesModal.tsx`
+Last updated: 2026-06-30
+
+| Property | Class |
+| -------- | ----- |
+| Trigger button | `rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-background` |
+| Modal | `fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm` / inner `max-w-md rounded-xl border border-border bg-card p-6` (neutral border, not `border-destructive/20` like ReportBlockerButton's modal — this isn't a "something's wrong" action) |
+| Toggle (selected) | `rounded-lg border border-foreground bg-foreground px-3 py-1.5 text-xs font-semibold text-card` |
+| Toggle (unselected) | `rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background` |
+
+**Pattern notes:**
+Rendered next to `ReportBlockerButton` in the module detail page header, gated by `canManageDependencies` (`owner`/`team_lead`/`project_manager` only — no assignee carve-out, since declaring a dependency is an architecture decision, not day-to-day execution; mirrors `actions/modules.ts`'s `DEPENDENCY_MANAGER_ROLES` exactly). Lists sibling modules in the project as toggle buttons; each toggle calls `addDependency`/`removeDependency` directly (one Server Action call per click, not a batch save) then `router.refresh()`. Returns `null` when the project has no other modules to depend on. The module detail page's right sidebar also gained a "Dependencies" card (between Deadline and Activity Summary, same `rounded-xl border border-border bg-card p-5 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` shell as its neighbors) with two sub-lists — "Depends on" and "Depended on by" — each entry a `Link`-wrapped badge (`rounded-md border px-2 py-0.5 text-xs font-medium`); a broken (blocked or overdue) upstream entry uses `border-destructive/20 bg-destructive-light text-destructive`, everything else `border-border bg-background text-foreground`. If the module itself is in the computed at-risk set (`lib/dependency-risk.ts`'s `computeAtRiskModules`), an "Integration risk" badge appears next to the status badge in the page header, reusing `lib/blocker-types.ts`'s warning composition (`border-warning/30 bg-warning-light text-warning`) — no new color token. The project detail page (`app/projects/[id]/page.tsx`) similarly gained a dependency-edge list section between `ScheduleAlert` and the stat cards, shown only when the project has ≥1 edge — one row per edge (`"X depends on Y"`), `border-destructive/20 bg-destructive-light` when the upstream is broken, neutral otherwise. `components/projects/ModulesList.tsx` and `components/dashboard/ModulesTable.tsx` both gained an optional `size-1.5 rounded-full bg-warning` dot next to the module name when `atRisk` is true.
+
+---
+
 ### Dashboard — ActivityFeed
 
 File: `components/dashboard/ActivityFeed.tsx`
@@ -284,6 +312,28 @@ Last updated: 2026-06-28
 
 **Pattern notes:**
 Event rows use `divide-y divide-border`. Each row has a colored `size-2 rounded-full` dot (`bg-success`, `bg-warning`, `bg-muted-foreground`). Actor and target are `font-semibold`. Project + timestamp are `text-xs text-muted-foreground`.
+
+---
+
+### My Work Page
+
+File: `app/my-work/page.tsx`, `components/my-work/MyModulesList.tsx`, `components/my-work/ProgressBumpButtons.tsx`, `components/my-work/TeamPulse.tsx`
+Last updated: 2026-06-30
+
+| Property | Class |
+| -------- | ----- |
+| Page header h1 | `text-[32px] font-bold leading-tight text-foreground` |
+| Module row card | `rounded-xl border border-border bg-card p-5 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+| Status badge | same `statusConfig` bg/text/border map as `ModulesTable.tsx`/`ModulesList.tsx` |
+| At-risk dot | `size-1.5 rounded-full bg-warning` — same as the dependency-graph feature's indicator |
+| Overdue / Blocked badge | `rounded-md border border-destructive/20 bg-destructive-light px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-destructive` |
+| Stale badge | `rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground` — neutral tone, not a danger tier (a module can be stale but otherwise on schedule) |
+| Bump button | `rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-40` |
+| Team Pulse "Updated" badge | `rounded-md border border-success/20 bg-success-light px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-success` |
+| Team Pulse "Silent" badge | same neutral composition as the stale badge |
+
+**Pattern notes:**
+A personal, per-user module list — `assignedDeveloperId === currentUser.id`, org-scoped via a join to `projects`. Sorted by an urgency tier (`overdue > blocked > stale > atRisk > rest`, each tier broken by `daysLeft` ascending), computed server-side via `lib/module-status.ts`'s `computeModuleBadges` plus a reuse of `lib/dependency-risk.ts`'s `computeAtRiskModules` for the at-risk dot — not reinvented. `MyModulesList.tsx` deliberately does NOT reuse `ModulesTable.tsx`/`ModulesList.tsx` directly: those wrap each row in one full-bleed `<Link>`, which can't contain the interactive bump buttons this page needs — only the module name/project text is a link here, badges and `ProgressBumpButtons` are link-sibling elements instead. `ProgressBumpButtons.tsx` is its own client component (own `useTransition`) so each row's pending state is independent — a single shared transition at the list level would make every row's buttons appear pending whenever any one of them was clicked. It calls `updateModuleProgress` directly (no new Server Action) and always passes the module's *current* status through unchanged, which is what prevents a bump from ever silently completing a module — the only path to `"completed"` stays `approveModule`. Buttons render `null` entirely when `status === "completed"`, matching the action's own lock. Team Pulse is a role-gated section (`MODULE_LEAD_ROLES`, exported from `lib/roles.ts` — moved out of `actions/modules.ts` after a post-implementation fix, since a `"use server"` file can't export a plain non-function value) below the personal list — not a tab, not a separate route — shown only to leads/PM/owner, computed from `lib/module-status.ts`'s `computeTeamPulse` (member "updated this week" if ANY assigned module's `updatedAt` falls within 7 days; zero-assigned-module members render separately from "silent" ones, not lumped in).
 
 ---
 

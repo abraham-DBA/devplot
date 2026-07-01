@@ -4,24 +4,22 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { modules, activityLogs, blockerLogs, projects } from "@/lib/schema";
+import { modules, activityLogs, blockerLogs, projects, moduleDependencies } from "@/lib/schema";
 import { auth } from "@/lib/auth";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { calculateProjectHealth, calculateProjectProgress } from "@/lib/health";
+import { computeAtRiskModules } from "@/lib/dependency-risk";
+import { MODULE_LEAD_ROLES } from "@/lib/roles";
 import type { BlockerType } from "@/lib/blocker-types";
 
 const VALID_STATUSES = ["not_started", "in_progress", "review", "blocked", "completed"] as const;
 type ModuleStatus = (typeof VALID_STATUSES)[number];
 
-// Shared eligibility for module-level mutations that should be restricted to
-// the assignee or a lead/PM/owner — progress updates and blocker resolution.
-const MODULE_LEAD_ROLES = ["team_lead", "project_manager", "owner"];
-
 // ── Note type stored in technicalNotes JSON ──────────────────────────────────
 
 export type NoteEntry = {
   id: string;
-  type: "technical" | "implementation" | "schema" | "api";
+  type: "technical" | "implementation" | "schema" | "api" | "review";
   title: string;
   body: string;
   createdAt: string;
@@ -47,6 +45,7 @@ type CreateModuleInput = {
   deadline: string;
   status: ModuleStatus;
   progress: number;
+  dependsOnModuleIds?: string[];
 };
 
 const CAN_MANAGE_MODULES = ["owner", "team_lead", "project_manager"] as const;
@@ -62,7 +61,7 @@ export async function createModule(
   const orgId = session.user.organizationId;
   if (!orgId) return { success: false, error: "No organization found." };
 
-  const { projectId, name, description, assignedDeveloperId, deadline, status, progress } = input;
+  const { projectId, name, description, assignedDeveloperId, deadline, status, progress, dependsOnModuleIds = [] } = input;
 
   if (!name.trim()) return { success: false, error: "Module name is required." };
   if (!description.trim()) return { success: false, error: "Description is required." };
@@ -77,6 +76,18 @@ export async function createModule(
     .from(projects)
     .where(eq(projects.id, projectId));
   if (!proj || proj.organizationId !== orgId) return { success: false, error: "Project not found." };
+
+  // Don't trust the client's filtered dropdown alone — confirm every selected
+  // dependency actually belongs to this project before linking to it.
+  if (dependsOnModuleIds.length > 0) {
+    const validDeps = await db
+      .select({ id: modules.id })
+      .from(modules)
+      .where(and(inArray(modules.id, dependsOnModuleIds), eq(modules.projectId, projectId)));
+    if (validDeps.length !== dependsOnModuleIds.length) {
+      return { success: false, error: "One or more selected dependencies are not in this project." };
+    }
+  }
 
   const id = crypto.randomUUID();
 
@@ -93,6 +104,17 @@ export async function createModule(
       technicalNotes: "",
       createdAt: new Date(),
     });
+
+    if (dependsOnModuleIds.length > 0) {
+      await db.insert(moduleDependencies).values(
+        dependsOnModuleIds.map((dependsOnModuleId) => ({
+          id: crypto.randomUUID(),
+          moduleId: id,
+          dependsOnModuleId,
+          createdAt: new Date(),
+        })),
+      );
+    }
 
     await db.insert(activityLogs).values({
       id: crypto.randomUUID(),
@@ -143,8 +165,14 @@ export async function updateModuleProgress(
       };
     }
 
+    // A completed module is locked — reopening isn't a silent slider drag,
+    // it has to go through an explicit, audited path (not built yet).
+    if (mod.status === "completed") {
+      return { success: false, error: "This module is completed and locked from further edits." };
+    }
+
     await db.update(modules)
-      .set({ progress, status })
+      .set({ progress, status, updatedAt: new Date() })
       .where(eq(modules.id, moduleId));
 
     await db.insert(activityLogs).values({
@@ -347,6 +375,303 @@ export async function resolveBlocker(blockerId: string): Promise<{ success: bool
   }
 }
 
+// ── approveModule / requestChanges ───────────────────────────────────────────
+
+// Reviewer must NOT be the assignee, even if they also hold a privileged role —
+// unlike updateModuleProgress/resolveBlocker's isAssignee||isPrivileged pattern,
+// approval requires someone other than the person who did the work to sign off.
+function getReviewEligibility(mod: { status: string; assignedDeveloperId: string }, session: { user: { id: string; role: string | null } }) {
+  if (mod.status !== "review") {
+    return { eligible: false, error: "Module must be in review before it can be approved." };
+  }
+  const isPrivileged = MODULE_LEAD_ROLES.includes(session.user.role ?? "");
+  const isAssignee = mod.assignedDeveloperId === session.user.id;
+  if (!isPrivileged || isAssignee) {
+    return {
+      eligible: false,
+      error: "Only a lead/PM/owner who isn't the assignee can review this module.",
+    };
+  }
+  return { eligible: true as const };
+}
+
+export async function approveModule(moduleId: string): Promise<{ success: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const mod = await getOrgScopedModule(moduleId, orgId);
+    if (!mod) return { success: false, error: "Module not found." };
+
+    const eligibility = getReviewEligibility(mod, session);
+    if (!eligibility.eligible) return { success: false, error: eligibility.error };
+
+    const openBlockers = await db
+      .select({ id: blockerLogs.id })
+      .from(blockerLogs)
+      .where(and(eq(blockerLogs.moduleId, moduleId), eq(blockerLogs.resolved, false)));
+    if (openBlockers.length > 0) {
+      return { success: false, error: "Cannot approve a module with unresolved blockers. Resolve them first." };
+    }
+
+    await db.update(modules)
+      .set({ status: "completed", progress: 100 })
+      .where(eq(modules.id, moduleId));
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId: mod.projectId,
+      organizationId: orgId,
+      message: `${session.user.name} approved ${mod.name} — module marked complete`,
+      createdAt: new Date(),
+    });
+
+    await recalculateProjectHealth(mod.projectId);
+
+    revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
+    revalidatePath(`/projects/${mod.projectId}`);
+    revalidatePath("/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/modules] approveModule", error);
+    return { success: false, error: "Failed to approve module. Please try again." };
+  }
+}
+
+export async function requestChanges(
+  moduleId: string,
+  comment: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+
+  if (!comment.trim()) return { success: false, error: "Please explain what needs to change." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const mod = await getOrgScopedModule(moduleId, orgId);
+    if (!mod) return { success: false, error: "Module not found." };
+
+    const eligibility = getReviewEligibility(mod, session);
+    if (!eligibility.eligible) return { success: false, error: eligibility.error };
+
+    const existing = parseNotes(mod.technicalNotes);
+    const newNote: NoteEntry = {
+      id: crypto.randomUUID(),
+      type: "review",
+      title: "Changes requested",
+      body: comment.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...existing, newNote];
+
+    await db.update(modules)
+      .set({ status: "in_progress", technicalNotes: JSON.stringify(updated) })
+      .where(eq(modules.id, moduleId));
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId: mod.projectId,
+      organizationId: orgId,
+      message: `${session.user.name} requested changes on ${mod.name}`,
+      createdAt: new Date(),
+    });
+
+    await recalculateProjectHealth(mod.projectId);
+
+    revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
+    revalidatePath(`/projects/${mod.projectId}`);
+    revalidatePath("/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/modules] requestChanges", error);
+    return { success: false, error: "Failed to request changes. Please try again." };
+  }
+}
+
+// ── addDependency / removeDependency ─────────────────────────────────────────
+
+// Declaring "Billing depends on Auth" is an architecture decision, not a
+// day-to-day execution one — unlike progress updates or blocker resolution,
+// this is restricted to the same role set that can create modules, with no
+// assignee carve-out.
+const DEPENDENCY_MANAGER_ROLES = CAN_MANAGE_MODULES;
+
+// Walks the existing "depends on" graph from dependsOnModuleId — if that walk
+// ever reaches moduleId, then dependsOnModuleId already (transitively)
+// depends on moduleId, so adding moduleId -> dependsOnModuleId would close a
+// cycle. Small per-project N, so an in-memory BFS beats a recursive SQL CTE.
+async function wouldCreateCycle(
+  projectId: string,
+  moduleId: string,
+  dependsOnModuleId: string,
+): Promise<boolean> {
+  const projectModules = await db
+    .select({ id: modules.id })
+    .from(modules)
+    .where(eq(modules.projectId, projectId));
+  const projectModuleIds = projectModules.map((m) => m.id);
+
+  const edges =
+    projectModuleIds.length > 0
+      ? await db
+          .select({ moduleId: moduleDependencies.moduleId, dependsOnModuleId: moduleDependencies.dependsOnModuleId })
+          .from(moduleDependencies)
+          .where(inArray(moduleDependencies.moduleId, projectModuleIds))
+      : [];
+
+  const dependsOnMap = new Map<string, string[]>();
+  for (const edge of edges) {
+    const list = dependsOnMap.get(edge.moduleId) ?? [];
+    list.push(edge.dependsOnModuleId);
+    dependsOnMap.set(edge.moduleId, list);
+  }
+
+  const visited = new Set<string>();
+  const queue = [dependsOnModuleId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === moduleId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    queue.push(...(dependsOnMap.get(current) ?? []));
+  }
+  return false;
+}
+
+export async function addDependency(
+  moduleId: string,
+  dependsOnModuleId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (!DEPENDENCY_MANAGER_ROLES.includes(session.user.role as (typeof DEPENDENCY_MANAGER_ROLES)[number]))
+    return { success: false, error: "Only owners, team leads, and project managers can manage dependencies." };
+
+  if (moduleId === dependsOnModuleId) {
+    return { success: false, error: "A module cannot depend on itself." };
+  }
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const mod = await getOrgScopedModule(moduleId, orgId);
+    if (!mod) return { success: false, error: "Module not found." };
+    const dependency = await getOrgScopedModule(dependsOnModuleId, orgId);
+    if (!dependency) return { success: false, error: "Dependency module not found." };
+
+    if (mod.projectId !== dependency.projectId) {
+      return { success: false, error: "Modules must belong to the same project to declare a dependency." };
+    }
+
+    const existing = await db
+      .select({ id: moduleDependencies.id })
+      .from(moduleDependencies)
+      .where(
+        and(
+          eq(moduleDependencies.moduleId, moduleId),
+          eq(moduleDependencies.dependsOnModuleId, dependsOnModuleId),
+        ),
+      );
+    if (existing.length > 0) {
+      return { success: false, error: "This dependency already exists." };
+    }
+
+    if (await wouldCreateCycle(mod.projectId, moduleId, dependsOnModuleId)) {
+      return { success: false, error: "This would create a circular dependency." };
+    }
+
+    await db.insert(moduleDependencies).values({
+      id: crypto.randomUUID(),
+      moduleId,
+      dependsOnModuleId,
+      createdAt: new Date(),
+    });
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId: mod.projectId,
+      organizationId: orgId,
+      message: `${session.user.name} marked ${mod.name} as depending on ${dependency.name}`,
+      createdAt: new Date(),
+    });
+
+    // A new edge can immediately put a module at risk (e.g. linking onto an
+    // already-overdue module) — the project's computed health needs to
+    // reflect that right away, not wait for some unrelated module mutation.
+    await recalculateProjectHealth(mod.projectId);
+
+    revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
+    revalidatePath(`/projects/${mod.projectId}/modules/${dependsOnModuleId}`);
+    revalidatePath(`/projects/${mod.projectId}`);
+    revalidatePath("/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/modules] addDependency", error);
+    return { success: false, error: "Failed to add dependency. Please try again." };
+  }
+}
+
+export async function removeDependency(dependencyId: string): Promise<{ success: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (!DEPENDENCY_MANAGER_ROLES.includes(session.user.role as (typeof DEPENDENCY_MANAGER_ROLES)[number]))
+    return { success: false, error: "Only owners, team leads, and project managers can manage dependencies." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const [dep] = await db
+      .select({
+        id: moduleDependencies.id,
+        moduleId: moduleDependencies.moduleId,
+        dependsOnModuleId: moduleDependencies.dependsOnModuleId,
+        projectId: modules.projectId,
+        moduleName: modules.name,
+      })
+      .from(moduleDependencies)
+      .innerJoin(modules, eq(moduleDependencies.moduleId, modules.id))
+      .innerJoin(projects, eq(modules.projectId, projects.id))
+      .where(and(eq(moduleDependencies.id, dependencyId), eq(projects.organizationId, orgId)));
+
+    if (!dep) return { success: false, error: "Dependency not found." };
+
+    await db.delete(moduleDependencies).where(eq(moduleDependencies.id, dependencyId));
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId: dep.projectId,
+      organizationId: orgId,
+      message: `${session.user.name} removed a dependency from ${dep.moduleName}`,
+      createdAt: new Date(),
+    });
+
+    // Removing the edge that was the only thing keeping a module at risk
+    // should clear that risk immediately, same reasoning as addDependency.
+    await recalculateProjectHealth(dep.projectId);
+
+    revalidatePath(`/projects/${dep.projectId}/modules/${dep.moduleId}`);
+    revalidatePath(`/projects/${dep.projectId}/modules/${dep.dependsOnModuleId}`);
+    revalidatePath(`/projects/${dep.projectId}`);
+    revalidatePath("/dashboard");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/modules] removeDependency", error);
+    return { success: false, error: "Failed to remove dependency. Please try again." };
+  }
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // Verifies the module's parent project belongs to the caller's org before any
@@ -376,17 +701,28 @@ async function recalculateProjectHealth(projectId: string) {
   if (!project) return;
 
   const allModules = await db
-    .select({ progress: modules.progress, status: modules.status })
+    .select({ id: modules.id, progress: modules.progress, status: modules.status, deadline: modules.deadline })
     .from(modules)
     .where(eq(modules.projectId, projectId));
 
+  const moduleIds = allModules.map((m) => m.id);
+  const edges =
+    moduleIds.length > 0
+      ? await db
+          .select({ moduleId: moduleDependencies.moduleId, dependsOnModuleId: moduleDependencies.dependsOnModuleId })
+          .from(moduleDependencies)
+          .where(inArray(moduleDependencies.moduleId, moduleIds))
+      : [];
+
   const newProgress = calculateProjectProgress(allModules.map((m) => m.progress));
   const hasBlockedModule = allModules.some((m) => m.status === "blocked");
+  const atRiskModuleIds = computeAtRiskModules(allModules, edges);
   const newHealth = calculateProjectHealth({
     startDate: project.startDate,
     endDate: project.endDate,
     progress: newProgress,
     hasBlockedModule,
+    hasDependencyRisk: atRiskModuleIds.size > 0,
   });
 
   await db.update(projects)

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects, modules, blockerLogs, activityLogs, user } from "@/lib/schema";
+import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies } from "@/lib/schema";
 import { eq, desc, inArray, and } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
@@ -16,6 +16,7 @@ import { ProjectCard } from "@/components/dashboard/ProjectCard";
 import { ModulesTable } from "@/components/dashboard/ModulesTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { calculateProjectHealth } from "@/lib/health";
+import { computeAtRiskModules } from "@/lib/dependency-risk";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "completed" | "blocked";
 type ProjectHealth = "on_track" | "at_risk" | "high_risk";
@@ -132,6 +133,15 @@ export default async function DashboardPage() {
     : [];
   const memberNameMap = Object.fromEntries(memberUsers.map((u) => [u.id, u.name]));
 
+  // ── Dependency edges (org-wide, grouped per project below) ────────────────
+
+  const allDependencyEdges = moduleIds.length > 0
+    ? await db.select({
+        moduleId: moduleDependencies.moduleId,
+        dependsOnModuleId: moduleDependencies.dependsOnModuleId,
+      }).from(moduleDependencies).where(inArray(moduleDependencies.moduleId, moduleIds))
+    : [];
+
   // ── Live project health ────────────────────────────────────────────────────
   // Recomputed here instead of trusting the stored `projects.health` column,
   // which only updates on module mutations — a project with no recent activity
@@ -144,15 +154,29 @@ export default async function DashboardPage() {
     if (!projectModuleMap[m.projectId]) projectModuleMap[m.projectId] = [];
     projectModuleMap[m.projectId].push(m);
   }
+
+  // Dependency edges only ever connect modules within the same project, so
+  // risk is computed per-project (same grouping as projectModuleMap) and
+  // merged into one org-wide set for the modules table below.
+  const moduleIdToProjectId = Object.fromEntries(allModules.map((m) => [m.id, m.projectId]));
+  const atRiskModuleIds = new Set<string>();
+  for (const p of allProjects) {
+    const mods = projectModuleMap[p.id] ?? [];
+    const edges = allDependencyEdges.filter((e) => moduleIdToProjectId[e.moduleId] === p.id);
+    for (const id of computeAtRiskModules(mods, edges)) atRiskModuleIds.add(id);
+  }
+
   const healthByProject = Object.fromEntries(
     allProjects.map((p) => {
       const mods = projectModuleMap[p.id] ?? [];
       const hasBlockedModule = mods.some((m) => m.status === "blocked");
+      const hasDependencyRisk = mods.some((m) => atRiskModuleIds.has(m.id));
       const health = calculateProjectHealth({
         startDate: p.startDate,
         endDate: p.endDate,
         progress: p.progress,
         hasBlockedModule,
+        hasDependencyRisk,
       });
       return [p.id, health];
     }),
@@ -293,6 +317,7 @@ export default async function DashboardPage() {
         progress: m.progress,
         deadline: formatDueDate(m.deadline),
         deadlineUrgent: daysLeft <= 3,
+        atRisk: atRiskModuleIds.has(m.id),
       };
     });
 
