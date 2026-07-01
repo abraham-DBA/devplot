@@ -126,6 +126,17 @@ export function MyModulesList({ modules }: Props) {
                 )}
               </div>
             )}
+
+            {/* View module CTA */}
+            <div className="mt-3 flex items-center justify-end border-t border-border pt-3">
+              <Link
+                href={`/projects/${mod.projectId}/modules/${mod.id}`}
+                aria-label={`View details for ${mod.name}`}
+                className="text-xs font-semibold text-brand-primary hover:underline"
+              >
+                View module →
+              </Link>
+            </div>
           </li>
         );
       })}

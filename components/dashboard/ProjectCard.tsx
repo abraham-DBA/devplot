@@ -126,6 +126,12 @@ export function ProjectCard({
           <span>Due {dueDate}</span>
         </div>
       </div>
+
+      {/* View details CTA */}
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+        <span className="text-xs text-muted-foreground">Click to open project</span>
+        <span className="text-xs font-semibold text-brand-primary">View details →</span>
+      </div>
     </Link>
   );
 }

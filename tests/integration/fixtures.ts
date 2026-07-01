@@ -37,7 +37,6 @@ export async function createTestOrg() {
     industry: "Technology",
     size: "1-10",
     ownerId,
-    inviteCode: randomUUID(),
     createdAt: new Date(),
   });
 

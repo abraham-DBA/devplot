@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { updateProfile } from "@/actions/users";
 import { authClient } from "@/lib/auth-client";
 
-type Role = "developer" | "team_lead" | "project_manager";
+type Role = "owner" | "developer" | "team_lead" | "project_manager";
 
 type OwnedModule = {
   id: string;
@@ -24,18 +24,25 @@ type ConnectedAccount = {
 type Props = {
   initialName: string;
   email: string;
-  initialRole: Role;
+  currentRole: Role;
   initials: string;
   ownedModules: OwnedModule[];
   connectedAccounts: ConnectedAccount[];
-  isOwner: boolean;
 };
 
-const ROLES: { value: Role; label: string; description: string }[] = [
-  { value: "developer",        label: "Developer",       description: "Update progress on assigned modules." },
-  { value: "team_lead",        label: "Team Lead",       description: "Create modules and manage team." },
-  { value: "project_manager",  label: "Project Manager", description: "Create projects and oversee delivery." },
-];
+const ROLE_LABELS: Record<Role, string> = {
+  owner:           "Owner",
+  developer:       "Developer",
+  team_lead:       "Team Lead",
+  project_manager: "Project Manager",
+};
+
+const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  owner:           "Workspace owners have full access and cannot change their role.",
+  developer:       "Assigned by your workspace owner · Update progress on assigned modules.",
+  team_lead:       "Assigned by your workspace owner · Create modules and manage team.",
+  project_manager: "Assigned by your workspace owner · Create projects and oversee delivery.",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   not_started: "NOT STARTED",
@@ -73,27 +80,18 @@ function ProviderIcon({ provider }: { provider: "google" | "github" }) {
 export function ProfileForm({
   initialName,
   email,
-  initialRole,
+  currentRole,
   initials,
   ownedModules,
   connectedAccounts,
-  isOwner,
 }: Props) {
   const [name, setName] = useState(initialName);
-  const [role, setRole] = useState<Role>(initialRole);
-  // savedName/savedRole track the last value persisted to DB.
-  // isDirty compares against these so the form resets correctly after each save
-  // without needing a full page reload (same pattern as ModuleDetailClient).
   const [savedName, setSavedName] = useState(initialName);
-  const [savedRole, setSavedRole] = useState<Role>(initialRole);
   const [isPending, startTransition] = useTransition();
   const [linkingProvider, setLinkingProvider] = useState<"google" | "github" | null>(null);
   const router = useRouter();
 
-  // Owners cannot change their role, so only name changes make the form dirty.
-  const isDirty = isOwner
-    ? name.trim() !== savedName
-    : name.trim() !== savedName || role !== savedRole;
+  const isDirty = name.trim() !== savedName;
 
   function handleSave() {
     if (!name.trim()) {
@@ -102,12 +100,11 @@ export function ProfileForm({
     }
     startTransition(async () => {
       const trimmedName = name.trim();
-      const result = await updateProfile({ name: trimmedName, role });
+      const result = await updateProfile({ name: trimmedName });
       if (result.error) {
         toast.error(result.error);
       } else {
         setSavedName(trimmedName);
-        setSavedRole(role);
         setName(trimmedName);
         toast.success("Changes saved.");
       }
@@ -116,7 +113,6 @@ export function ProfileForm({
 
   function handleCancel() {
     setName(savedName);
-    setRole(savedRole);
   }
 
   // Linking only happens from this already-authenticated session — never
@@ -191,7 +187,7 @@ export function ProfileForm({
           </div>
         </div>
 
-        {/* Role card */}
+        {/* Role card — read-only; roles are assigned by the workspace owner */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Role
@@ -201,45 +197,17 @@ export function ProfileForm({
             <span className="text-foreground">projects</span> and{" "}
             <span className="text-foreground">modules</span>.
           </p>
-
-          {isOwner ? (
-            /* Owners have a fixed role — show read-only badge */
-            <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-3">
-              <span className="text-sm font-semibold text-foreground">Owner</span>
-              <span className="rounded-full bg-background px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Fixed
-              </span>
-              <p className="text-xs text-muted-foreground">
-                Workspace owners have full access and cannot change their role.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {ROLES.map((r) => {
-                const selected = role === r.value;
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setRole(r.value)}
-                    disabled={isPending}
-                    className={[
-                      "rounded-xl border p-4 text-left transition-colors",
-                      selected
-                        ? "border-foreground bg-muted"
-                        : "border-border bg-card hover:bg-background",
-                      "disabled:opacity-50",
-                    ].join(" ")}
-                  >
-                    <p className="text-sm font-semibold text-foreground">
-                      {r.label}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">{r.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-3">
+            <span className="text-sm font-semibold text-foreground">
+              {ROLE_LABELS[currentRole] ?? currentRole}
+            </span>
+            <span className="rounded-full bg-background px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Fixed
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {ROLE_DESCRIPTIONS[currentRole]}
+            </p>
+          </div>
         </div>
 
         {/* Connected accounts card */}

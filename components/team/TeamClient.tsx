@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { updateMemberRole, removeMember, rotateInviteCode } from "@/actions/team";
+import { updateMemberRole, removeMember, createInvite, revokeInvite } from "@/actions/team";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,10 +16,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type MemberRole = "owner" | "developer" | "team_lead" | "project_manager";
+type InviteRole = "developer" | "team_lead" | "project_manager";
 // All org members are immediately "active" — joining via invite link grants
 // full membership with no approval step, so there's no "pending" state for
-// any member to ever be in. Don't reintroduce a Pending filter without an
-// actual pending-membership concept behind it.
+// any member to ever be in.
 type MemberStatus = "active";
 type Filter = "all" | "active";
 
@@ -30,6 +30,14 @@ type Member = {
   role: MemberRole;
   joinedAt: string;
   status: MemberStatus;
+};
+
+type PendingInvite = {
+  id: string;
+  email: string;
+  role: InviteRole;
+  expiresAt: string;
+  code: string;
 };
 
 type Stats = {
@@ -45,13 +53,19 @@ type Props = {
   currentUserId: string;
   currentUserRole: string;
   inviteBase: string;
-  initialInviteCode: string | null;
+  pendingInvites: PendingInvite[];
 };
 
 const editableRoleOptions: { value: Exclude<MemberRole, "owner">; label: string }[] = [
   { value: "developer", label: "Developer" },
   { value: "team_lead", label: "Team Lead" },
   { value: "project_manager", label: "Project Manager" },
+];
+
+const inviteRoleOptions: { value: InviteRole; label: string; description: string; icon: string }[] = [
+  { value: "developer", label: "Developer", description: "Build features, fix bugs, and ship code.", icon: "⌨" },
+  { value: "team_lead", label: "Team Lead", description: "Guide your team, review work, and unblock progress.", icon: "◈" },
+  { value: "project_manager", label: "Project Manager", description: "Plan timelines, track deliverables, and coordinate teams.", icon: "◎" },
 ];
 
 const filterTabs: { value: Filter; label: string }[] = [
@@ -70,22 +84,26 @@ function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
+function formatExpiry(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 const CAN_CHANGE_ROLES = ["owner", "project_manager", "team_lead"];
 const CAN_REMOVE_MEMBERS = ["owner", "project_manager"];
 
-export function TeamClient({ members, stats, currentUserId, currentUserRole, inviteBase, initialInviteCode }: Props) {
+export function TeamClient({ members, stats, currentUserId, currentUserRole, inviteBase, pendingInvites: initialPendingInvites }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteCode, setInviteCode] = useState(initialInviteCode ?? "");
-  const [isRotating, setIsRotating] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<InviteRole>("developer");
+  const [createdLink, setCreatedLink] = useState<string | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>(initialPendingInvites);
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Inviting (viewing/copying/regenerating the link) is owner-only.
-  const canInvite = currentUserRole === "owner" && initialInviteCode !== null;
-  const currentInviteLink = `${inviteBase}/${inviteCode}`;
-
+  const canInvite = currentUserRole === "owner";
   const canChangeRoles = CAN_CHANGE_ROLES.includes(currentUserRole);
   const canRemoveMembers = CAN_REMOVE_MEMBERS.includes(currentUserRole);
 
@@ -124,24 +142,52 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
     });
   }
 
-  function handleCopyLink() {
-    navigator.clipboard
-      .writeText(currentInviteLink)
-      .then(() => toast.success("Invite link copied!"))
-      .catch(() => toast.error("Failed to copy link. Please copy it manually."));
+  function handleCreateInvite() {
+    startTransition(async () => {
+      const result = await createInvite(inviteEmail.trim(), inviteRole);
+      if (!result.success) {
+        toast.error(result.error ?? "Failed to create invite");
+        return;
+      }
+      const link = `${inviteBase}/${result.code}`;
+      setCreatedLink(link);
+      // Optimistically add to pending list using the real DB id so revoke works immediately.
+      setPendingInvites((prev) => [
+        ...prev,
+        {
+          id: result.id!,
+          email: inviteEmail.trim().toLowerCase(),
+          role: inviteRole,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          code: result.code!,
+        },
+      ]);
+    });
   }
 
-  function handleRotateInvite() {
-    if (!confirm("Regenerate the invite link? The old link will stop working immediately.")) return;
-    setIsRotating(true);
+  function handleCopyCreatedLink() {
+    if (!createdLink) return;
+    navigator.clipboard
+      .writeText(createdLink)
+      .then(() => toast.success("Invite link copied!"))
+      .catch(() => toast.error("Failed to copy. Please copy it manually."));
+  }
+
+  function handleCloseInviteModal() {
+    setInviteOpen(false);
+    setInviteEmail("");
+    setInviteRole("developer");
+    setCreatedLink(null);
+  }
+
+  function handleRevoke(inviteId: string, email: string) {
     startTransition(async () => {
-      const result = await rotateInviteCode();
-      setIsRotating(false);
+      const result = await revokeInvite(inviteId);
       if (!result.success) {
-        toast.error(result.error ?? "Failed to regenerate invite link.");
+        toast.error(result.error ?? "Failed to revoke invite");
       } else {
-        setInviteCode(result.newCode!);
-        toast.success("Invite link regenerated.");
+        setPendingInvites((prev) => prev.filter((inv) => inv.id !== inviteId));
+        toast.success(`Invite for ${email} revoked`);
       }
     });
   }
@@ -313,57 +359,194 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
         </table>
       </div>
 
-      {/* Invite modal — shareable link, owner-only */}
+      {/* Pending invites — owner only */}
+      {canInvite && (
+        <div className="mt-6">
+          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Pending Invites
+          </h2>
+          {pendingInvites.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">No pending invites.</p>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-6 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Email
+                    </th>
+                    <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Role
+                    </th>
+                    <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Expires
+                    </th>
+                    <th className="px-6 py-3 text-right font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pendingInvites.map((inv) => (
+                    <tr key={inv.id} className="transition-colors hover:bg-background">
+                      <td className="px-6 py-4 text-sm text-foreground">{inv.email}</td>
+                      <td className="px-4 py-4">
+                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
+                          {roleLabel[inv.role]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-muted-foreground">
+                        {formatExpiry(inv.expiresAt)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleRevoke(inv.id, inv.email)}
+                          disabled={isPending}
+                          className="text-sm font-medium text-destructive transition-opacity hover:opacity-75 disabled:opacity-50"
+                        >
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Invite modal */}
       {inviteOpen && canInvite && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setInviteOpen(false);
+            if (e.target === e.currentTarget) handleCloseInviteModal();
           }}
         >
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-lg">
-            <h2 className="text-lg font-semibold text-foreground">Invite someone to your team</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Share this link with anyone you want to invite. They&apos;ll pick their role when they join.
-            </p>
-
-            <div className="mt-5">
-              <label className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Invite link
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  readOnly
-                  value={currentInviteLink}
-                  className="h-10 flex-1 truncate rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
+            {createdLink ? (
+              /* Step 2 — show generated link */
+              <>
+                <h2 className="text-lg font-semibold text-foreground">Invite link created</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Share this link with <span className="font-medium text-foreground">{inviteEmail}</span>.
+                  It expires in 7 days and can only be used once.
+                </p>
+                <div className="mt-5">
+                  <label className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Invite link
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={createdLink}
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                      className="h-10 flex-1 truncate rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyCreatedLink}
+                      className="shrink-0 rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-card transition-opacity hover:opacity-90"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={handleCopyLink}
-                  disabled={isPending}
-                  className="shrink-0 rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-card transition-opacity hover:opacity-90 disabled:opacity-50"
+                  onClick={handleCloseInviteModal}
+                  className="mt-5 w-full rounded-lg border border-border bg-card py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-background"
                 >
-                  Copy
+                  Done
                 </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleRotateInvite}
-                disabled={isPending}
-                className="mt-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-              >
-                {isRotating ? "Regenerating…" : "Regenerate link"}
-              </button>
-            </div>
+              </>
+            ) : (
+              /* Step 1 — email + role form */
+              <>
+                <h2 className="text-lg font-semibold text-foreground">Invite a team member</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Enter their email and assign a role. They&apos;ll join with exactly that role — no changes on their end.
+                </p>
 
-            <button
-              type="button"
-              onClick={() => setInviteOpen(false)}
-              className="mt-5 w-full rounded-lg border border-border bg-card py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-background"
-            >
-              Close
-            </button>
+                <div className="mt-5">
+                  <label className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Email address
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="teammate@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    disabled={isPending}
+                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <label className="mb-2 block font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Role
+                  </label>
+                  <div className="grid gap-2">
+                    {inviteRoleOptions.map((opt) => {
+                      const isSelected = inviteRole === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setInviteRole(opt.value)}
+                          disabled={isPending}
+                          className={[
+                            "flex items-start gap-3 rounded-xl border p-4 text-left transition-all disabled:opacity-60",
+                            isSelected
+                              ? "border-brand-primary ring-1 ring-brand-primary"
+                              : "border-border hover:border-brand-secondary",
+                          ].join(" ")}
+                        >
+                          <span
+                            className={[
+                              "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border text-sm transition-colors",
+                              isSelected
+                                ? "border-brand-primary bg-brand-primary text-card"
+                                : "border-border bg-background text-muted-foreground",
+                            ].join(" ")}
+                          >
+                            {opt.icon}
+                          </span>
+                          <span className="flex flex-col">
+                            <span className="text-sm font-semibold text-foreground">{opt.label}</span>
+                            <span className="mt-0.5 text-xs text-muted-foreground">{opt.description}</span>
+                          </span>
+                          {isSelected && (
+                            <span className="ml-auto mt-0.5 shrink-0 text-brand-primary">✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseInviteModal}
+                    disabled={isPending}
+                    className="flex-1 rounded-lg border border-border bg-card py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateInvite}
+                    disabled={isPending || !inviteEmail.trim()}
+                    className="flex-1 rounded-lg bg-brand-primary py-2.5 text-sm font-semibold text-card transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {isPending ? "Creating…" : "Create invite"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -377,8 +560,7 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {memberToRemove?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              They will immediately lose access to this workspace and will need a new invite link to
-              rejoin.
+              They will immediately lose access to this workspace and will need a new invite to rejoin.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

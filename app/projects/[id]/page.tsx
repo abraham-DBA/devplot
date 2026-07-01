@@ -9,6 +9,7 @@ import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ScheduleAlert } from "@/components/projects/ScheduleAlert";
 import { ModulesList } from "@/components/projects/ModulesList";
+import { DeleteProjectButton } from "@/components/projects/DeleteProjectButton";
 import { calculateProjectHealth } from "@/lib/health";
 import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
 
@@ -209,12 +210,23 @@ export default async function ProjectDetailPage({
           </div>
 
           {["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "") && (
-            <Link
-              href={`/projects/${id}/modules/new`}
-              className="shrink-0 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
-            >
-              + Add module
-            </Link>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Link
+                href={`/projects/${id}/edit`}
+                className="rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+              >
+                Edit project
+              </Link>
+              {["owner", "project_manager"].includes(currentUser.role ?? "") && (
+                <DeleteProjectButton projectId={id} projectName={project.name} />
+              )}
+              <Link
+                href={`/projects/${id}/modules/new`}
+                className="rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-card transition-colors hover:bg-brand-primary"
+              >
+                + Add module
+              </Link>
+            </div>
           )}
         </div>
 

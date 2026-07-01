@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { updateMemberRole, removeMember, rotateInviteCode } from "@/actions/team";
+import { updateMemberRole, removeMember } from "@/actions/team";
 import { resolveBlocker } from "@/actions/modules";
 import { setMockUser, type MockUser } from "./setup";
 import {
@@ -11,7 +11,7 @@ import {
   cleanupTestOrg,
 } from "./fixtures";
 import { db } from "@/lib/db";
-import { organizationMembers, organizations } from "@/lib/schema";
+import { organizationMembers } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 
 function asUser(id: string, role: MockUser["role"], organizationId: string): MockUser {
@@ -177,39 +177,3 @@ describe("actions/team — removeMember", () => {
   });
 });
 
-describe("actions/team — rotateInviteCode", () => {
-  let cleanup: { orgId: string; userIds: string[] } | null = null;
-
-  afterEach(async () => {
-    setMockUser(null);
-    if (cleanup) await cleanupTestOrg(cleanup.orgId, cleanup.userIds);
-    cleanup = null;
-  });
-
-  it("only the owner can regenerate the invite link", async () => {
-    const { orgId, ownerId } = await createTestOrg();
-    const projectManager = await createTestMember(orgId, "project_manager");
-    cleanup = { orgId, userIds: [ownerId, projectManager] };
-
-    setMockUser(asUser(projectManager, "project_manager", orgId));
-    const result = await rotateInviteCode();
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Only the workspace owner can regenerate the invite link.");
-  });
-
-  it("the owner rotating it actually changes the stored invite code", async () => {
-    const { orgId, ownerId } = await createTestOrg();
-    cleanup = { orgId, userIds: [ownerId] };
-
-    const [before] = await db.select({ inviteCode: organizations.inviteCode }).from(organizations).where(eq(organizations.id, orgId));
-
-    setMockUser(asUser(ownerId, "owner", orgId));
-    const result = await rotateInviteCode();
-    expect(result.success).toBe(true);
-    expect(result.newCode).toBeTruthy();
-
-    const [after] = await db.select({ inviteCode: organizations.inviteCode }).from(organizations).where(eq(organizations.id, orgId));
-    expect(after.inviteCode).not.toBe(before.inviteCode);
-    expect(after.inviteCode).toBe(result.newCode);
-  });
-});

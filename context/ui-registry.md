@@ -154,6 +154,7 @@ Last updated: 2026-06-28
 | Progress bar | `h-1.5 rounded-full` — color matches health |
 | Team avatars | `size-7 rounded-full border-2 border-card bg-foreground text-card -space-x-2` |
 | Blocker badge | `bg-destructive-light text-destructive rounded-md px-2 py-0.5 text-xs font-semibold` |
+| View details footer | `mt-4 flex items-center justify-between border-t border-border pt-3` — hint: `text-xs text-muted-foreground` · CTA label: `text-xs font-semibold text-brand-primary` |
 
 ---
 
@@ -331,6 +332,7 @@ Last updated: 2026-06-30
 | Bump button | `rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-40` |
 | Team Pulse "Updated" badge | `rounded-md border border-success/20 bg-success-light px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-success` |
 | Team Pulse "Silent" badge | same neutral composition as the stale badge |
+| View module footer | `mt-3 flex items-center justify-end border-t border-border pt-3` — CTA is a real `<Link>` (card `<li>` is not a link): `text-xs font-semibold text-brand-primary hover:underline` with `aria-label="View details for {name}"` to disambiguate from the module name link above |
 
 **Pattern notes:**
 A personal, per-user module list — `assignedDeveloperId === currentUser.id`, org-scoped via a join to `projects`. Sorted by an urgency tier (`overdue > blocked > stale > atRisk > rest`, each tier broken by `daysLeft` ascending), computed server-side via `lib/module-status.ts`'s `computeModuleBadges` plus a reuse of `lib/dependency-risk.ts`'s `computeAtRiskModules` for the at-risk dot — not reinvented. `MyModulesList.tsx` deliberately does NOT reuse `ModulesTable.tsx`/`ModulesList.tsx` directly: those wrap each row in one full-bleed `<Link>`, which can't contain the interactive bump buttons this page needs — only the module name/project text is a link here, badges and `ProgressBumpButtons` are link-sibling elements instead. `ProgressBumpButtons.tsx` is its own client component (own `useTransition`) so each row's pending state is independent — a single shared transition at the list level would make every row's buttons appear pending whenever any one of them was clicked. It calls `updateModuleProgress` directly (no new Server Action) and always passes the module's *current* status through unchanged, which is what prevents a bump from ever silently completing a module — the only path to `"completed"` stays `approveModule`. Buttons render `null` entirely when `status === "completed"`, matching the action's own lock. Team Pulse is a role-gated section (`MODULE_LEAD_ROLES`, exported from `lib/roles.ts` — moved out of `actions/modules.ts` after a post-implementation fix, since a `"use server"` file can't export a plain non-function value) below the personal list — not a tab, not a separate route — shown only to leads/PM/owner, computed from `lib/module-status.ts`'s `computeTeamPulse` (member "updated this week" if ANY assigned module's `updatedAt` falls within 7 days; zero-assigned-module members render separately from "silent" ones, not lumped in).

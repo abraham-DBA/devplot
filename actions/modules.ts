@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { modules, activityLogs, blockerLogs, projects, moduleDependencies } from "@/lib/schema";
+import { modules, activityLogs, blockerLogs, projects, moduleDependencies, organizationMembers } from "@/lib/schema";
 import { auth } from "@/lib/auth";
 import { and, eq, inArray } from "drizzle-orm";
 import { calculateProjectHealth, calculateProjectProgress } from "@/lib/health";
@@ -669,6 +669,112 @@ export async function removeDependency(dependencyId: string): Promise<{ success:
   } catch (error) {
     console.error("[actions/modules] removeDependency", error);
     return { success: false, error: "Failed to remove dependency. Please try again." };
+  }
+}
+
+// ── updateModule ──────────────────────────────────────────────────────────────
+
+type UpdateModuleInput = {
+  name: string;
+  description: string;
+  assignedDeveloperId: string;
+  deadline: string;
+};
+
+export async function updateModule(
+  moduleId: string,
+  input: UpdateModuleInput,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (!CAN_MANAGE_MODULES.includes(session.user.role as (typeof CAN_MANAGE_MODULES)[number]))
+    return { success: false, error: "Only owners, team leads, and project managers can edit modules." };
+
+  const { name, description, assignedDeveloperId, deadline } = input;
+
+  if (!name.trim()) return { success: false, error: "Module name is required." };
+  if (!description.trim()) return { success: false, error: "Description is required." };
+  if (!assignedDeveloperId) return { success: false, error: "Owner is required." };
+  if (!deadline) return { success: false, error: "Deadline is required." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const mod = await getOrgScopedModule(moduleId, orgId);
+    if (!mod) return { success: false, error: "Module not found." };
+
+    const [member] = await db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, assignedDeveloperId)));
+    if (!member) return { success: false, error: "Assigned developer is not a member of your organization." };
+
+    await db.update(modules)
+      .set({ name: name.trim(), description: description.trim(), assignedDeveloperId, deadline })
+      .where(eq(modules.id, moduleId));
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId: mod.projectId,
+      organizationId: orgId,
+      message: `${session.user.name} updated module ${name.trim()}`,
+      createdAt: new Date(),
+    });
+
+    await recalculateProjectHealth(mod.projectId);
+
+    revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
+    revalidatePath(`/projects/${mod.projectId}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/my-work");
+
+    return { success: true };
+  } catch (error) {
+    console.error("[actions/modules] updateModule", error);
+    return { success: false, error: "Failed to update module. Please try again." };
+  }
+}
+
+// ── deleteModule ──────────────────────────────────────────────────────────────
+
+export async function deleteModule(
+  moduleId: string,
+): Promise<{ success: boolean; error?: string; projectId?: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+  if (!CAN_MANAGE_MODULES.includes(session.user.role as (typeof CAN_MANAGE_MODULES)[number]))
+    return { success: false, error: "Only owners, team leads, and project managers can delete modules." };
+
+  const orgId = session.user.organizationId;
+  if (!orgId) return { success: false, error: "No organization found." };
+
+  try {
+    const mod = await getOrgScopedModule(moduleId, orgId);
+    if (!mod) return { success: false, error: "Module not found." };
+
+    const { projectId, name } = mod;
+
+    await db.delete(modules).where(eq(modules.id, moduleId));
+
+    await db.insert(activityLogs).values({
+      id: crypto.randomUUID(),
+      projectId,
+      organizationId: orgId,
+      message: `${session.user.name} deleted module ${name}`,
+      createdAt: new Date(),
+    });
+
+    await recalculateProjectHealth(projectId);
+
+    revalidatePath(`/projects/${projectId}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/my-work");
+
+    return { success: true, projectId };
+  } catch (error) {
+    console.error("[actions/modules] deleteModule", error);
+    return { success: false, error: "Failed to delete module. Please try again." };
   }
 }
 

@@ -3,14 +3,34 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { organizations } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { inviteLinks, organizations } from "@/lib/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { JoinOrgForm } from "@/components/onboarding/JoinOrgForm";
 import type { SessionUser } from "@/lib/auth-types";
 
 type Props = {
   params: Promise<{ code: string }>;
 };
+
+function ErrorCard({ title, message }: { title: string; message: string }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-[0px_1px_3px_rgba(0,0,0,0.05)] text-center">
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-destructive-light">
+          <span className="text-xl text-destructive">✕</span>
+        </div>
+        <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{message}</p>
+        <Link
+          href="/login"
+          className="mt-6 inline-block rounded-lg bg-brand-primary px-5 py-2.5 text-sm font-semibold text-card hover:opacity-90"
+        >
+          Back to login
+        </Link>
+      </div>
+    </main>
+  );
+}
 
 export default async function JoinPage({ params }: Props) {
   const { code } = await params;
@@ -27,30 +47,42 @@ export default async function JoinPage({ params }: Props) {
     redirect("/dashboard");
   }
 
-  const [org] = await db
+  const now = new Date();
+
+  const [invite] = await db
     .select()
+    .from(inviteLinks)
+    .where(and(eq(inviteLinks.code, code), isNull(inviteLinks.usedAt)));
+
+  if (!invite) {
+    return (
+      <ErrorCard
+        title="Invalid invite link"
+        message="This invite link is invalid or has already been used. Ask your workspace owner for a new one."
+      />
+    );
+  }
+
+  if (invite.expiresAt <= now) {
+    return (
+      <ErrorCard
+        title="Invite link expired"
+        message="This invite link has expired. Ask your workspace owner to send you a new one."
+      />
+    );
+  }
+
+  const [org] = await db
+    .select({ id: organizations.id, name: organizations.name, description: organizations.description })
     .from(organizations)
-    .where(eq(organizations.inviteCode, code));
+    .where(eq(organizations.id, invite.organizationId));
 
   if (!org) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 shadow-[0px_1px_3px_rgba(0,0,0,0.05)] text-center">
-          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-destructive-light">
-            <span className="text-xl text-destructive">✕</span>
-          </div>
-          <h1 className="text-lg font-semibold text-foreground">Invalid invite link</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This invite link is invalid or has expired. Ask your workspace owner for a new one.
-          </p>
-          <Link
-            href="/login"
-            className="mt-6 inline-block rounded-lg bg-brand-primary px-5 py-2.5 text-sm font-semibold text-card hover:opacity-90"
-          >
-            Back to login
-          </Link>
-        </div>
-      </main>
+      <ErrorCard
+        title="Organization not found"
+        message="This invite link is no longer valid. Ask your workspace owner for a new one."
+      />
     );
   }
 
@@ -70,8 +102,7 @@ export default async function JoinPage({ params }: Props) {
             You&apos;ve been invited
           </p>
           <p className="mt-5 text-xl font-bold leading-[1.3] text-card lg:text-[26px]">
-            Join <span className="text-card">{org.name}</span> on DevFlow — pick your role and
-            start collaborating.
+            Join <span className="text-card">{org.name}</span> on DevFlow and start collaborating.
           </p>
           <p className="mt-5 text-sm font-medium leading-5 text-brand-secondary">
             {org.description}
@@ -81,7 +112,7 @@ export default async function JoinPage({ params }: Props) {
         <p className="font-mono text-xs text-brand-secondary">&copy; 2026 DevFlow</p>
       </section>
 
-      {/* Right — role picker */}
+      {/* Right — join confirmation */}
       <section className="flex h-screen items-center justify-center overflow-y-auto bg-card px-6 py-8 sm:px-10 lg:px-14">
         <div className="w-full max-w-[420px]">
           <header className="mb-7">
@@ -89,11 +120,19 @@ export default async function JoinPage({ params }: Props) {
               Join {org.name}
             </h1>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Pick the role that best describes how you&apos;ll contribute.
+              You&apos;ve been invited to join as a{" "}
+              <span className="font-semibold text-foreground">
+                {invite.role === "team_lead"
+                  ? "Team Lead"
+                  : invite.role === "project_manager"
+                    ? "Project Manager"
+                    : "Developer"}
+              </span>
+              .
             </p>
           </header>
 
-          <JoinOrgForm inviteCode={code} orgName={org.name} />
+          <JoinOrgForm inviteCode={code} orgName={org.name} role={invite.role} />
         </div>
       </section>
     </main>

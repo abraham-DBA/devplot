@@ -69,7 +69,6 @@ export const organizations = pgTable("organizations", {
   ownerId: text("owner_id")
     .references(() => user.id, { onDelete: "restrict" })
     .notNull(),
-  inviteCode: text("invite_code").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -90,6 +89,21 @@ export const organizationMembers = pgTable(
   },
   (table) => [uniqueIndex("org_member_unique_idx").on(table.organizationId, table.userId)],
 );
+
+export const inviteLinks = pgTable("invite_links", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  email: text("email").notNull(),
+  role: text("role")
+    .$type<"developer" | "team_lead" | "project_manager">()
+    .notNull(),
+  code: text("code").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+});
 
 // ─── Application tables ─────────────────────────────────────────────────────
 
@@ -191,6 +205,11 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   members: many(organizationMembers),
   projects: many(projects),
   activityLogs: many(activityLogs),
+  inviteLinks: many(inviteLinks),
+}));
+
+export const inviteLinksRelations = relations(inviteLinks, ({ one }) => ({
+  organization: one(organizations, { fields: [inviteLinks.organizationId], references: [organizations.id] }),
 }));
 
 export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({

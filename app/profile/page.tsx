@@ -67,14 +67,19 @@ export default async function ProfilePage() {
   ];
 
   const isOwner = currentUser.role === "owner";
-  const memberRole = (
-    isOwner || !currentUser.role || currentUser.role === "owner"
-      ? "developer"
-      : currentUser.role
-  ) as "developer" | "team_lead" | "project_manager";
+  const currentRole = (currentUser.role ?? "developer") as
+    | "owner"
+    | "developer"
+    | "team_lead"
+    | "project_manager";
 
-  // Owners display as project_manager in the Navbar (closest permission tier)
-  const navbarRole = isOwner ? "project_manager" : memberRole;
+  // Owners display as project_manager in the Navbar (closest permission tier).
+  // Explicit guard — no cast — so an unexpected role value defaults safely.
+  const navbarRole: "developer" | "team_lead" | "project_manager" = isOwner
+    ? "project_manager"
+    : currentUser.role === "team_lead" || currentUser.role === "project_manager"
+      ? currentUser.role
+      : "developer";
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -87,18 +92,17 @@ export default async function ProfilePage() {
             Profile &amp; settings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your identity, role, and notification preferences.
+            Manage your display name and connected accounts.
           </p>
         </div>
 
         <ProfileForm
           initialName={currentUser.name}
           email={currentUser.email}
-          initialRole={memberRole}
+          currentRole={currentRole}
           initials={getInitials(currentUser.name)}
           ownedModules={ownedModuleRows}
           connectedAccounts={accountSummary}
-          isOwner={isOwner}
         />
       </main>
     </div>

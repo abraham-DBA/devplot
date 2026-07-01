@@ -84,7 +84,6 @@ async function seed() {
       industry: "Technology",
       size: "11-50",
       ownerId: USER.abraham,
-      inviteCode: "seed-invite-001",
       createdAt: new Date(),
     })
     .onConflictDoNothing();

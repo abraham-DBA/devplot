@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { user, organizations, organizationMembers } from "@/lib/schema";
-import { eq, inArray } from "drizzle-orm";
+import { user, organizations, organizationMembers, inviteLinks } from "@/lib/schema";
+import { eq, inArray, and, isNull, gt } from "drizzle-orm";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { TeamClient } from "@/components/team/TeamClient";
 import type { SessionUser } from "@/lib/auth-types";
@@ -66,9 +66,22 @@ export default async function TeamPage() {
   const appUrl = await getRequestOrigin();
   const inviteBase = `${appUrl}/join`;
 
-  // Only the owner can invite — non-owners never receive the invite code, not even in the page payload.
   const isOwner = currentUser.role === "owner";
-  const initialInviteCode = isOwner ? org.inviteCode : null;
+
+  // Only fetch pending invites for the owner — non-owners never see invite data.
+  const now = new Date();
+  const pendingInvites = isOwner
+    ? await db
+        .select()
+        .from(inviteLinks)
+        .where(
+          and(
+            eq(inviteLinks.organizationId, orgId),
+            isNull(inviteLinks.usedAt),
+            gt(inviteLinks.expiresAt, now),
+          ),
+        )
+    : [];
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -80,7 +93,13 @@ export default async function TeamPage() {
           currentUserId={currentUser.id}
           currentUserRole={currentUser.role ?? "developer"}
           inviteBase={inviteBase}
-          initialInviteCode={initialInviteCode}
+          pendingInvites={pendingInvites.map((inv) => ({
+            id: inv.id,
+            email: inv.email,
+            role: inv.role,
+            expiresAt: inv.expiresAt.toISOString(),
+            code: inv.code,
+          }))}
         />
       </main>
     </div>

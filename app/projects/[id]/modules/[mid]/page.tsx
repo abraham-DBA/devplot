@@ -11,6 +11,7 @@ import { ModuleDetailClient } from "@/components/modules/ModuleDetailClient";
 import { ReportBlockerButton } from "@/components/modules/ReportBlockerButton";
 import { BlockerList } from "@/components/modules/BlockerList";
 import { ManageDependenciesModal } from "@/components/modules/ManageDependenciesModal";
+import { DeleteModuleButton } from "@/components/modules/DeleteModuleButton";
 import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
 import type { NoteEntry } from "@/actions/modules";
 
@@ -209,7 +210,7 @@ export default async function ModuleDetailPage({
             <p className="mt-1.5 text-sm text-muted-foreground">{mod.description}</p>
           </div>
 
-          <div className="flex shrink-0 gap-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {canManageDependencies && (
               <ManageDependenciesModal
                 moduleId={mid}
@@ -217,8 +218,18 @@ export default async function ModuleDetailPage({
                 currentDependencies={currentDependencies}
               />
             )}
-            {/* Report blocker — isolated client button, no SSR data needed */}
             <ReportBlockerButton moduleId={mid} />
+            {canManageDependencies && (
+              <>
+                <Link
+                  href={`/projects/${id}/modules/${mid}/edit`}
+                  className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+                >
+                  Edit
+                </Link>
+                <DeleteModuleButton moduleId={mid} moduleName={mod.name} projectId={id} />
+              </>
+            )}
           </div>
         </div>
 

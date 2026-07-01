@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { user, organizations, organizationMembers } from "@/lib/schema";
-import { eq, and } from "drizzle-orm";
+import { user, organizations, organizationMembers, inviteLinks } from "@/lib/schema";
+import { eq, and, isNull } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { randomBytes, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 
 type OrgSize = "1-10" | "11-50" | "51-200" | "201-500" | "500+";
 const VALID_SIZES: OrgSize[] = ["1-10", "11-50", "51-200", "201-500", "500+"];
@@ -22,12 +22,6 @@ const VALID_INDUSTRIES = [
   "Retail",
   "Other",
 ] as const;
-
-const VALID_MEMBER_ROLES = ["developer", "team_lead", "project_manager"] as const;
-type MemberRole = (typeof VALID_MEMBER_ROLES)[number];
-
-const VALID_PROFILE_ROLES = ["developer", "team_lead", "project_manager"] as const;
-type ProfileRole = (typeof VALID_PROFILE_ROLES)[number];
 
 // ── completeOnboarding ────────────────────────────────────────────────────────
 
@@ -62,7 +56,6 @@ export async function completeOnboarding(
 
   const orgId = randomUUID();
   const memberId = randomUUID();
-  const inviteCode = randomBytes(8).toString("hex");
 
   try {
     await db.transaction(async (tx) => {
@@ -73,7 +66,6 @@ export async function completeOnboarding(
         industry,
         size,
         ownerId: session.user.id,
-        inviteCode,
       });
 
       await tx.insert(organizationMembers).values({
@@ -103,12 +95,7 @@ export async function completeOnboarding(
 
 export async function joinOrganization(
   code: string,
-  role: MemberRole,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!VALID_MEMBER_ROLES.includes(role)) {
-    return { success: false, error: "Invalid role selected." };
-  }
-
   // Session and pre-checks outside try/catch so redirect() propagates correctly.
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
@@ -117,16 +104,28 @@ export async function joinOrganization(
     return { success: false, error: "You are already part of an organization." };
   }
 
+  const now = new Date();
+
+  const [invite] = await db
+    .select()
+    .from(inviteLinks)
+    .where(and(eq(inviteLinks.code, code), isNull(inviteLinks.usedAt)));
+
+  if (!invite) return { success: false, error: "Invalid invite link." };
+  if (invite.expiresAt <= now) return { success: false, error: "This invite link has expired. Ask your workspace owner for a new one." };
+  if (invite.email !== session.user.email?.toLowerCase())
+    return { success: false, error: "This invite was sent to a different email address." };
+
   const [org] = await db
-    .select()
+    .select({ id: organizations.id })
     .from(organizations)
-    .where(eq(organizations.inviteCode, code));
+    .where(eq(organizations.id, invite.organizationId));
 
-  if (!org) return { success: false, error: "Invalid invite link." };
+  if (!org) return { success: false, error: "Organization not found." };
 
-  // Check for existing membership scoped to THIS org — not just any org.
+  // Check for existing membership — redirect outside try/catch so it propagates correctly.
   const [existing] = await db
-    .select()
+    .select({ id: organizationMembers.id })
     .from(organizationMembers)
     .where(
       and(
@@ -135,9 +134,9 @@ export async function joinOrganization(
       ),
     );
 
-  if (existing) {
-    redirect("/dashboard");
-  }
+  if (existing) redirect("/dashboard");
+
+  const role = invite.role;
 
   try {
     await db.transaction(async (tx) => {
@@ -152,6 +151,11 @@ export async function joinOrganization(
         .update(user)
         .set({ organizationId: org.id, role, onboardingCompleted: true })
         .where(eq(user.id, session.user.id));
+
+      await tx
+        .update(inviteLinks)
+        .set({ usedAt: now })
+        .where(eq(inviteLinks.id, invite.id));
     });
 
     revalidatePath("/dashboard");
@@ -167,46 +171,19 @@ export async function joinOrganization(
 
 export async function updateProfile(input: {
   name: string;
-  role: ProfileRole;
 }): Promise<{ success: boolean; error?: string }> {
-  const { name, role } = input;
+  const { name } = input;
 
   if (!name.trim()) return { success: false, error: "Display name is required." };
-  if (!VALID_PROFILE_ROLES.includes(role)) return { success: false, error: "Invalid role selected." };
 
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session?.user?.id) return { success: false, error: "Unauthorized" };
 
-    if (session.user.role === "owner") {
-      return { success: false, error: "Owner role cannot be changed." };
-    }
-
-    const orgId = session.user.organizationId;
-
-    await db.transaction(async (tx) => {
-      await tx
-        .update(user)
-        .set({ name: name.trim(), role })
-        .where(eq(user.id, session.user.id));
-
-      // Keep organizationMembers.role in sync so team page reflects the change.
-      if (orgId) {
-        await tx
-          .update(organizationMembers)
-          .set({ role })
-          .where(
-            and(
-              eq(organizationMembers.userId, session.user.id),
-              eq(organizationMembers.organizationId, orgId),
-            ),
-          );
-      }
-    });
+    await db.update(user).set({ name: name.trim() }).where(eq(user.id, session.user.id));
 
     revalidatePath("/profile");
     revalidatePath("/dashboard");
-    revalidatePath("/team");
     return { success: true };
   } catch (error) {
     console.error("[actions/users] updateProfile", error);
