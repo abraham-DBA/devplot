@@ -132,6 +132,32 @@ Fetches on mount (for badge count) and on each open (to refresh). `hasFetched` g
 
 ---
 
+### Modules — DependencyGraph
+
+File: `components/modules/DependencyGraph.tsx`
+Last updated: 2026-07-04
+
+| Property | Class / value |
+| -------- | ------------- |
+| Outer scroll container | `overflow-auto rounded-xl border border-border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+| Node button | `rounded-xl border-2 p-3 text-left transition-all hover:shadow-md focus:outline-none` |
+| Node border per status | `border-border` / `border-brand-primary` / `border-warning` / `border-success` / `border-destructive` |
+| Node bg per status | `bg-card` / `bg-card` / `bg-warning-light` / `bg-success-light` / `bg-destructive-light` |
+| Critical path ring | inline `box-shadow: 0 0 0 2px var(--color-warning), 0 1px 3px rgba(0,0,0,0.05)` |
+| Node name | `text-[11px] font-semibold leading-tight text-foreground` (truncated) |
+| Progress bar track | `h-1 w-full overflow-hidden rounded-full bg-background` |
+| Progress bar fill | `h-full rounded-full` + status bar class |
+| Node footer label | `font-mono text-[9px] font-semibold text-muted-foreground` |
+| Isolated module grid | `grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4` |
+| Legend wrapper | `flex flex-wrap items-center gap-x-5 gap-y-2` |
+| Edge colors | `var(--color-border)` default · `var(--color-warning)` critical · `var(--color-destructive)` blocked |
+| Edge widths | 1.5px default, 2px critical; blocked gets `strokeDasharray="4 3"` |
+
+**Pattern notes:**
+Node layer uses absolutely-positioned `<button>` elements over a `pointer-events: none` SVG — SVG handles the edges/arrowheads, buttons handle interaction. Dagre layout computed in `useMemo` (LR, `nodesep: 40, ranksep: 80`, `200×80px` nodes). Three named SVG markers (`dg-arrow-default/critical/blocked`) each reference a `var(--color-*)` CSS variable via `style={{ fill: "..." }}` on the inner `<polygon>` — CSS custom properties cascade into SVG `<defs>` correctly. Isolated modules (no edges at all) render in a simpler grid below the graph rather than being included in the dagre layout. View toggle (List | Graph) is two `<Link>` elements pointing to `?view=graph` — server-side `searchParams` drives `isGraphView`, so the URL is shareable.
+
+---
+
 ### Dashboard — StatCard
 
 File: `components/dashboard/StatCard.tsx`

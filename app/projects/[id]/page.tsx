@@ -12,7 +12,9 @@ import { ModulesList } from "@/components/projects/ModulesList";
 import { DeleteProjectButton } from "@/components/projects/DeleteProjectButton";
 import { MilestonesSection } from "@/components/milestones/MilestonesSection";
 import { calculateProjectHealth } from "@/lib/health";
-import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
+import { computeAtRiskModules } from "@/lib/dependency-risk";
+import { computeCriticalPath } from "@/lib/critical-path";
+import { DependencyGraph } from "@/components/modules/DependencyGraph";
 
 type ProjectHealth = "on_track" | "at_risk" | "high_risk";
 
@@ -53,10 +55,13 @@ function timeAgo(date: Date): string {
 
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ view?: string }>;
 }) {
   const { id } = await params;
+  const { view } = await searchParams;
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) redirect("/login");
@@ -139,8 +144,6 @@ export default async function ProjectDetailPage({
           .from(moduleDependencies)
           .where(inArray(moduleDependencies.moduleId, moduleIds))
       : [];
-  const moduleNameMap = Object.fromEntries(projectModules.map((m) => [m.id, m]));
-
   // Fetch milestones with per-milestone module stats
   const projectMilestones = await db
     .select({
@@ -208,6 +211,14 @@ export default async function ProjectDetailPage({
 
   const hc = healthConfig[health];
   const progressBarColor = progressBarHealthColor[health]; // fix #3 — map is now correct for all health values
+
+  const isGraphView = view === "graph" && dependencyEdges.length > 0;
+  const { criticalNodeIds, criticalEdgeIds } = isGraphView
+    ? computeCriticalPath(
+        projectModules.map((m) => ({ id: m.id, deadline: m.deadline })),
+        dependencyEdges,
+      )
+    : { criticalNodeIds: new Set<string>(), criticalEdgeIds: new Set<string>() };
 
   // Priority display
   const priorityLabel =
@@ -279,41 +290,6 @@ export default async function ProjectDetailPage({
               progress={project.progress}
               hasBlockedModule={hasBlockedModule}
             />
-          </div>
-        )}
-
-        {/* Dependency chain */}
-        {dependencyEdges.length > 0 && (
-          <div className="mt-5 flex flex-col gap-2">
-            {dependencyEdges.map((edge) => {
-              const dependent = moduleNameMap[edge.moduleId];
-              const upstream = moduleNameMap[edge.dependsOnModuleId];
-              const upstreamBroken = upstream ? isModuleBroken(upstream) : false;
-              return (
-                <div
-                  key={edge.id}
-                  className={[
-                    "flex items-center gap-2 rounded-xl border p-4 text-sm",
-                    upstreamBroken
-                      ? "border-destructive/20 bg-destructive-light text-destructive"
-                      : "border-border bg-card text-foreground",
-                  ].join(" ")}
-                >
-                  <Link href={`/projects/${id}/modules/${edge.moduleId}`} className="font-semibold hover:underline">
-                    {dependent?.name ?? "Unknown module"}
-                  </Link>
-                  <span className={upstreamBroken ? "text-destructive" : "text-muted-foreground"}>depends on</span>
-                  <Link href={`/projects/${id}/modules/${edge.dependsOnModuleId}`} className="font-semibold hover:underline">
-                    {upstream?.name ?? "Unknown module"}
-                  </Link>
-                  {upstreamBroken && (
-                    <span className="ml-auto font-mono text-[10px] font-semibold uppercase tracking-wide">
-                      Upstream blocked
-                    </span>
-                  )}
-                </div>
-              );
-            })}
           </div>
         )}
 
@@ -399,27 +375,73 @@ export default async function ProjectDetailPage({
         {/* Main content — two columns */}
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
 
-          {/* Left — Modules */}
+          {/* Left — Modules / Dependency Graph */}
           <div>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-foreground">Modules</h2>
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {projectModules.length} Total
-              </span>
+              <div className="flex items-center gap-3">
+                {dependencyEdges.length > 0 && (
+                  <div className="flex rounded-lg border border-border bg-background p-0.5">
+                    <Link
+                      href={`/projects/${id}`}
+                      className={[
+                        "rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                        !isGraphView
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      ].join(" ")}
+                    >
+                      List
+                    </Link>
+                    <Link
+                      href={`/projects/${id}?view=graph`}
+                      className={[
+                        "rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                        isGraphView
+                          ? "bg-card text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      ].join(" ")}
+                    >
+                      Graph
+                    </Link>
+                  </div>
+                )}
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {projectModules.length} Total
+                </span>
+              </div>
             </div>
-            <ModulesList
-              projectId={id}
-              modules={projectModules.map((m) => ({
-                id: m.id,
-                name: m.name,
-                description: m.description,
-                status: m.status,
-                progress: m.progress,
-                ownerName: ownerMap[m.assignedDeveloperId]?.name ?? "Unknown",
-                deadline: m.deadline,
-                atRisk: atRiskModuleIds.has(m.id),
-              }))}
-            />
+
+            {isGraphView ? (
+              <DependencyGraph
+                projectId={id}
+                modules={projectModules.map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  status: m.status as "not_started" | "in_progress" | "review" | "completed" | "blocked",
+                  progress: m.progress,
+                  deadline: m.deadline,
+                  atRisk: atRiskModuleIds.has(m.id),
+                }))}
+                edges={dependencyEdges}
+                criticalNodeIds={[...criticalNodeIds]}
+                criticalEdgeIds={[...criticalEdgeIds]}
+              />
+            ) : (
+              <ModulesList
+                projectId={id}
+                modules={projectModules.map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  description: m.description,
+                  status: m.status,
+                  progress: m.progress,
+                  ownerName: ownerMap[m.assignedDeveloperId]?.name ?? "Unknown",
+                  deadline: m.deadline,
+                  atRisk: atRiskModuleIds.has(m.id),
+                }))}
+              />
+            )}
           </div>
 
           {/* Right — Team + Activity */}
