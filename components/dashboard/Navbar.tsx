@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 type NavbarProps = {
   userName: string;
@@ -104,6 +105,8 @@ export function Navbar({ userName, userRole }: NavbarProps) {
           <span className="hidden text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:block">
             {formatRole(userRole)}
           </span>
+
+          <NotificationBell />
 
           {/* Avatar — click to open sign-out dropdown */}
           <div className="relative" ref={dropdownRef}>

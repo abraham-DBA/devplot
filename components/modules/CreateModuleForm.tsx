@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { BUILTIN_TEMPLATES, applyTemplate } from "@/lib/module-templates";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked";
 
@@ -25,12 +26,18 @@ type ModuleOption = {
   name: string;
 };
 
+type MilestoneOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   projectId: string;
   developers: DeveloperOption[];
   currentUserId: string;
   defaultDeadline: string;
   existingModules: ModuleOption[];
+  milestones: MilestoneOption[];
 };
 
 const STATUSES: { value: ModuleStatus; label: string }[] = [
@@ -46,10 +53,12 @@ export function CreateModuleForm({
   currentUserId,
   defaultDeadline,
   existingModules,
+  milestones,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [ownerId, setOwnerId] = useState(() => {
@@ -60,6 +69,30 @@ export function CreateModuleForm({
   const [status, setStatus] = useState<ModuleStatus>("not_started");
   const [progress, setProgress] = useState(0);
   const [dependsOnModuleIds, setDependsOnModuleIds] = useState<string[]>([]);
+  const [templateNotes, setTemplateNotes] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+
+  const activeTemplate = BUILTIN_TEMPLATES.find((t) => t.id === selectedTemplateId) ?? null;
+
+  function pickTemplate(templateId: string) {
+    if (templateId === selectedTemplateId) {
+      // Deselect → reset to blank
+      setSelectedTemplateId(null);
+      setName("");
+      setDescription("");
+      setDeadline(defaultDeadline);
+      setTemplateNotes("");
+      return;
+    }
+    const template = BUILTIN_TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+    const applied = applyTemplate(template, new Date().toISOString().split("T")[0]);
+    setSelectedTemplateId(templateId);
+    setName(applied.name);
+    setDescription(applied.description);
+    setDeadline(applied.deadline);
+    setTemplateNotes(applied.technicalNotes);
+  }
 
   function toggleDependency(moduleId: string) {
     setDependsOnModuleIds((prev) =>
@@ -78,6 +111,8 @@ export function CreateModuleForm({
         status,
         progress,
         dependsOnModuleIds,
+        technicalNotes: templateNotes || undefined,
+        milestoneId: milestoneId || null,
       });
       if (result?.error) {
         toast.error(result.error);
@@ -90,6 +125,46 @@ export function CreateModuleForm({
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       {/* Left — form card */}
       <div className="flex-1 rounded-xl border border-border bg-card p-8 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+
+        {/* Template picker */}
+        <div>
+          <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Start from a template
+          </label>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Pick one to pre-fill the form, or leave blank and start fresh.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {BUILTIN_TEMPLATES.map((t) => {
+              const isActive = selectedTemplateId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => pickTemplate(t.id)}
+                  disabled={isPending}
+                  className={[
+                    "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50",
+                    isActive
+                      ? "border-foreground bg-foreground text-card"
+                      : "border-border bg-card text-foreground hover:bg-background",
+                  ].join(" ")}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          {activeTemplate && activeTemplate.seedNotes.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {activeTemplate.seedNotes.length} starter note
+              {activeTemplate.seedNotes.length !== 1 ? "s" : ""} will be added automatically.
+            </p>
+          )}
+        </div>
+
+        {/* Divider */}
+        <div className="my-6 border-t border-border" />
 
         {/* Module name */}
         <div>
@@ -206,7 +281,7 @@ export function CreateModuleForm({
           />
         </div>
 
-        {/* Depends on — only shown once the project has other modules to depend on */}
+        {/* Depends on */}
         {existingModules.length > 0 && (
           <div className="mt-6">
             <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -236,8 +311,58 @@ export function CreateModuleForm({
                 );
               })}
             </div>
+            {/* Soft suggestion from template */}
+            {activeTemplate && activeTemplate.suggestedDepNames.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Typically depends on:{" "}
+                <span className="font-medium text-foreground">
+                  {activeTemplate.suggestedDepNames.join(", ")}
+                </span>
+                {" "}— wire it above if that module exists.
+              </p>
+            )}
           </div>
         )}
+
+        {/* Milestone assignment */}
+        {milestones.length > 0 && (
+          <div className="mt-6">
+            <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Milestone
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Assign this module to a release milestone.
+            </p>
+            <select
+              value={milestoneId}
+              onChange={(e) => setMilestoneId(e.target.value)}
+              disabled={isPending}
+              className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary disabled:opacity-50"
+            >
+              <option value="">None</option>
+              {milestones.map((ms) => (
+                <option key={ms.id} value={ms.id}>
+                  {ms.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Suggested deps hint when no existing modules yet */}
+        {existingModules.length === 0 &&
+          activeTemplate &&
+          activeTemplate.suggestedDepNames.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs text-muted-foreground">
+                Tip: this template typically depends on{" "}
+                <span className="font-medium text-foreground">
+                  {activeTemplate.suggestedDepNames.join(", ")}
+                </span>
+                . Create that module first, then link the dependency here.
+              </p>
+            </div>
+          )}
       </div>
 
       {/* Right — tip + actions */}

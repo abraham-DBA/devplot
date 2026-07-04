@@ -13,7 +13,7 @@ import { BlockerList } from "@/components/modules/BlockerList";
 import { ManageDependenciesModal } from "@/components/modules/ManageDependenciesModal";
 import { DeleteModuleButton } from "@/components/modules/DeleteModuleButton";
 import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
-import type { NoteEntry } from "@/actions/modules";
+import type { NoteEntry } from "@/lib/note-types";
 
 type ModuleStatus = "not_started" | "in_progress" | "review" | "blocked" | "completed";
 

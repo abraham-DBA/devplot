@@ -123,11 +123,28 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const milestones = pgTable("milestones", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .references(() => projects.id, { onDelete: "cascade" })
+    .notNull(),
+  name: text("name").notNull(),
+  targetDate: date("target_date").notNull(),
+  rollbackOwnerId: text("rollback_owner_id").references(() => user.id, { onDelete: "set null" }),
+  contractsAgreed: boolean("contracts_agreed").default(false).notNull(),
+  status: text("status")
+    .$type<"upcoming" | "at_risk" | "missed" | "completed">()
+    .default("upcoming")
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const modules = pgTable("modules", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
     .references(() => projects.id, { onDelete: "cascade" })
     .notNull(),
+  milestoneId: text("milestone_id").references(() => milestones.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description").notNull(),
   assignedDeveloperId: text("assigned_developer_id")
@@ -181,6 +198,41 @@ export const activityLogs = pgTable("activity_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const checkIns = pgTable(
+  "check_ins",
+  {
+    id:             text("id").primaryKey(),
+    organizationId: text("organization_id")
+                      .references(() => organizations.id, { onDelete: "cascade" })
+                      .notNull(),
+    userId:         text("user_id")
+                      .references(() => user.id, { onDelete: "cascade" })
+                      .notNull(),
+    date:           date("date").notNull(),
+    shipped:        text("shipped").default("").notNull(),
+    next:           text("next").default("").notNull(),
+    createdAt:      timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("check_in_per_day_idx").on(table.organizationId, table.userId, table.date)],
+);
+
+export const notifications = pgTable("notifications", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .references(() => user.id, { onDelete: "cascade" })
+    .notNull(),
+  organizationId: text("organization_id")
+    .references(() => organizations.id, { onDelete: "cascade" })
+    .notNull(),
+  type: text("type")
+    .$type<"blocker_assigned" | "sent_to_review" | "dependency_blocked" | "milestone_at_risk">()
+    .notNull(),
+  message: text("message").notNull(),
+  resourceId: text("resource_id"),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 
 export const userRelations = relations(user, ({ one, many }) => ({
@@ -200,12 +252,19 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
 }));
 
+export const checkInsRelations = relations(checkIns, ({ one }) => ({
+  organization: one(organizations, { fields: [checkIns.organizationId], references: [organizations.id] }),
+  user: one(user, { fields: [checkIns.userId], references: [user.id] }),
+}));
+
 export const organizationsRelations = relations(organizations, ({ one, many }) => ({
   owner: one(user, { fields: [organizations.ownerId], references: [user.id] }),
   members: many(organizationMembers),
   projects: many(projects),
   activityLogs: many(activityLogs),
   inviteLinks: many(inviteLinks),
+  checkIns: many(checkIns),
+  notifications: many(notifications),
 }));
 
 export const inviteLinksRelations = relations(inviteLinks, ({ one }) => ({
@@ -220,11 +279,19 @@ export const organizationMembersRelations = relations(organizationMembers, ({ on
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   organization: one(organizations, { fields: [projects.organizationId], references: [organizations.id] }),
   modules: many(modules),
+  milestones: many(milestones),
   activityLogs: many(activityLogs),
+}));
+
+export const milestonesRelations = relations(milestones, ({ one, many }) => ({
+  project: one(projects, { fields: [milestones.projectId], references: [projects.id] }),
+  rollbackOwner: one(user, { fields: [milestones.rollbackOwnerId], references: [user.id] }),
+  modules: many(modules),
 }));
 
 export const modulesRelations = relations(modules, ({ one, many }) => ({
   project: one(projects, { fields: [modules.projectId], references: [projects.id] }),
+  milestone: one(milestones, { fields: [modules.milestoneId], references: [milestones.id] }),
   assignedDeveloper: one(user, { fields: [modules.assignedDeveloperId], references: [user.id] }),
   blockerLogs: many(blockerLogs),
 }));
@@ -242,4 +309,9 @@ export const moduleDependenciesRelations = relations(moduleDependencies, ({ one 
 export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   organization: one(organizations, { fields: [activityLogs.organizationId], references: [organizations.id] }),
   project: one(projects, { fields: [activityLogs.projectId], references: [projects.id] }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(user, { fields: [notifications.userId], references: [user.id] }),
+  organization: one(organizations, { fields: [notifications.organizationId], references: [organizations.id] }),
 }));

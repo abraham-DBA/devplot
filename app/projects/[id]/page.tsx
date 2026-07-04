@@ -3,13 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies } from "@/lib/schema";
+import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies, milestones } from "@/lib/schema";
 import { eq, inArray, desc, and } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { ScheduleAlert } from "@/components/projects/ScheduleAlert";
 import { ModulesList } from "@/components/projects/ModulesList";
 import { DeleteProjectButton } from "@/components/projects/DeleteProjectButton";
+import { MilestonesSection } from "@/components/milestones/MilestonesSection";
 import { calculateProjectHealth } from "@/lib/health";
 import { computeAtRiskModules, isModuleBroken } from "@/lib/dependency-risk";
 
@@ -80,6 +81,7 @@ export default async function ProjectDetailPage({
       progress: modules.progress,
       deadline: modules.deadline,
       assignedDeveloperId: modules.assignedDeveloperId,
+      milestoneId: modules.milestoneId,
     })
     .from(modules)
     .where(eq(modules.projectId, id))
@@ -138,6 +140,44 @@ export default async function ProjectDetailPage({
           .where(inArray(moduleDependencies.moduleId, moduleIds))
       : [];
   const moduleNameMap = Object.fromEntries(projectModules.map((m) => [m.id, m]));
+
+  // Fetch milestones with per-milestone module stats
+  const projectMilestones = await db
+    .select({
+      id: milestones.id,
+      name: milestones.name,
+      targetDate: milestones.targetDate,
+      rollbackOwnerId: milestones.rollbackOwnerId,
+      contractsAgreed: milestones.contractsAgreed,
+    })
+    .from(milestones)
+    .where(eq(milestones.projectId, id))
+    .orderBy(milestones.targetDate);
+
+  // Rollback owner names
+  const rollbackOwnerIds = [...new Set(projectMilestones.map((m) => m.rollbackOwnerId).filter(Boolean) as string[])];
+  const rollbackOwners =
+    rollbackOwnerIds.length > 0
+      ? await db.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, rollbackOwnerIds))
+      : [];
+  const rollbackOwnerMap = Object.fromEntries(rollbackOwners.map((u) => [u.id, u.name]));
+
+  // Per-milestone stats: total modules, completed, open blockers
+  const milestoneStats = await Promise.all(
+    projectMilestones.map(async (ms) => {
+      const linked = projectModules.filter((m) => m.milestoneId === ms.id);
+      const completed = linked.filter((m) => m.status === "completed").length;
+      const linkedIds = linked.map((m) => m.id);
+      const openBlockers =
+        linkedIds.length > 0
+          ? projectBlockers.filter((b) => linkedIds.includes(b.moduleId)).length
+          : 0;
+      return { milestoneId: ms.id, total: linked.length, completed, openBlockers };
+    }),
+  );
+  const milestoneStatsMap = Object.fromEntries(milestoneStats.map((s) => [s.milestoneId, s]));
+
+  const canManageMilestones = ["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "");
 
   // ── Compute metrics ───────────────────────────────────────────────────────
 
@@ -336,6 +376,24 @@ export default async function ProjectDetailPage({
               {projectBlockers.length > 0 ? "Needs attention" : "All clear"}
             </p>
           </div>
+        </div>
+
+        {/* Milestones */}
+        <div className="mt-8">
+          <MilestonesSection
+            projectId={id}
+            milestones={projectMilestones.map((ms) => ({
+              id: ms.id,
+              name: ms.name,
+              targetDate: ms.targetDate,
+              rollbackOwnerId: ms.rollbackOwnerId ?? null,
+              rollbackOwnerName: ms.rollbackOwnerId ? (rollbackOwnerMap[ms.rollbackOwnerId] ?? null) : null,
+              contractsAgreed: ms.contractsAgreed,
+              moduleStats: milestoneStatsMap[ms.id] ?? { total: 0, completed: 0, openBlockers: 0 },
+            }))}
+            teamMembers={teamMembers.map((m) => ({ id: m.id, name: m.name }))}
+            canManage={canManageMilestones}
+          />
         </div>
 
         {/* Main content — two columns */}

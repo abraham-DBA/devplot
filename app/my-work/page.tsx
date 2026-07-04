@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { modules, projects, moduleDependencies, organizationMembers, user } from "@/lib/schema";
+import { modules, projects, moduleDependencies, organizationMembers, user, checkIns } from "@/lib/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
+import { CheckInBanner } from "@/components/my-work/CheckInBanner";
 import { MyModulesList } from "@/components/my-work/MyModulesList";
 import { TeamPulse } from "@/components/my-work/TeamPulse";
 import { computeModuleBadges, computeTeamPulse } from "@/lib/module-status";
@@ -94,6 +95,28 @@ export default async function MyWorkPage() {
     })
     .sort((a, b) => a.tier - b.tier || a.daysLeft - b.daysLeft);
 
+  // Check-in status for today
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [existingCheckIn] = await db
+    .select({ id: checkIns.id })
+    .from(checkIns)
+    .where(
+      and(
+        eq(checkIns.organizationId, orgId),
+        eq(checkIns.userId, currentUser.id),
+        eq(checkIns.date, todayStr),
+      ),
+    );
+  const hasCheckedIn = !!existingCheckIn;
+
+  // Prefill "What did you ship?" from most recently updated assigned module
+  const prefillModule = [...rows].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )[0];
+  const prefillShipped = prefillModule
+    ? `Updated ${prefillModule.name} to ${prefillModule.progress}%`
+    : "";
+
   // Team Pulse — only fetched for leads/PMs/owners
   const canViewPulse = MODULE_LEAD_ROLES.includes(currentUser.role ?? "");
   let pulseRows: Awaited<ReturnType<typeof computeTeamPulse>> = [];
@@ -152,6 +175,14 @@ export default async function MyWorkPage() {
         </div>
 
         <div className="mt-6">
+          <CheckInBanner
+            hasCheckedIn={hasCheckedIn}
+            prefillShipped={prefillShipped}
+            assignedModules={rows.map((m) => ({ id: m.id, name: m.name }))}
+          />
+        </div>
+
+        <div className="mt-4">
           <MyModulesList modules={rows} />
         </div>
 

@@ -4,26 +4,21 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { modules, activityLogs, blockerLogs, projects, moduleDependencies, organizationMembers } from "@/lib/schema";
+import { modules, activityLogs, blockerLogs, projects, moduleDependencies, organizationMembers, notifications, milestones } from "@/lib/schema";
 import { auth } from "@/lib/auth";
 import { and, eq, inArray } from "drizzle-orm";
 import { calculateProjectHealth, calculateProjectProgress } from "@/lib/health";
 import { computeAtRiskModules } from "@/lib/dependency-risk";
 import { MODULE_LEAD_ROLES } from "@/lib/roles";
 import type { BlockerType } from "@/lib/blocker-types";
+import type { NoteEntry } from "@/lib/note-types";
 
 const VALID_STATUSES = ["not_started", "in_progress", "review", "blocked", "completed"] as const;
 type ModuleStatus = (typeof VALID_STATUSES)[number];
 
 // ── Note type stored in technicalNotes JSON ──────────────────────────────────
 
-export type NoteEntry = {
-  id: string;
-  type: "technical" | "implementation" | "schema" | "api" | "review";
-  title: string;
-  body: string;
-  createdAt: string;
-};
+export type { NoteEntry } from "@/lib/note-types";
 
 function parseNotes(raw: string): NoteEntry[] {
   if (!raw || raw.trim() === "") return [];
@@ -46,6 +41,8 @@ type CreateModuleInput = {
   status: ModuleStatus;
   progress: number;
   dependsOnModuleIds?: string[];
+  technicalNotes?: string;
+  milestoneId?: string | null;
 };
 
 const CAN_MANAGE_MODULES = ["owner", "team_lead", "project_manager"] as const;
@@ -61,7 +58,7 @@ export async function createModule(
   const orgId = session.user.organizationId;
   if (!orgId) return { success: false, error: "No organization found." };
 
-  const { projectId, name, description, assignedDeveloperId, deadline, status, progress, dependsOnModuleIds = [] } = input;
+  const { projectId, name, description, assignedDeveloperId, deadline, status, progress, dependsOnModuleIds = [], technicalNotes = "", milestoneId = null } = input;
 
   if (!name.trim()) return { success: false, error: "Module name is required." };
   if (!description.trim()) return { success: false, error: "Description is required." };
@@ -101,7 +98,8 @@ export async function createModule(
       deadline,
       status,
       progress,
-      technicalNotes: "",
+      technicalNotes,
+      milestoneId: milestoneId ?? null,
       createdAt: new Date(),
     });
 
@@ -184,6 +182,38 @@ export async function updateModuleProgress(
     });
 
     await recalculateProjectHealth(mod.projectId);
+
+    try {
+      if (status === "review" && mod.status !== "review") {
+        const leadMembers = await db
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(and(
+            eq(organizationMembers.organizationId, orgId),
+            inArray(organizationMembers.role, ["owner", "team_lead", "project_manager"]),
+          ));
+
+        const recipients = leadMembers.filter((m) => m.userId !== session.user.id);
+        if (recipients.length > 0) {
+          await db.insert(notifications).values(
+            recipients.map((m) => ({
+              id: crypto.randomUUID(),
+              userId: m.userId,
+              organizationId: orgId,
+              type: "sent_to_review" as const,
+              message: `${mod.name} was submitted for review by ${session.user.name}`,
+              resourceId: `/projects/${mod.projectId}/modules/${moduleId}`,
+              read: false,
+              createdAt: new Date(),
+            })),
+          );
+        }
+      }
+
+      await recalculateMilestoneStatus(mod.projectId, orgId);
+    } catch (sideEffectErr) {
+      console.error("[actions/modules] updateModuleProgress side-effects", sideEffectErr);
+    }
 
     revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
     revalidatePath(`/projects/${mod.projectId}`);
@@ -291,6 +321,60 @@ export async function reportBlocker(
 
     await recalculateProjectHealth(mod.projectId);
 
+    try {
+      // Notify the assigned developer when someone else reports a blocker on their module
+      if (mod.assignedDeveloperId !== session.user.id) {
+        await db.insert(notifications).values({
+          id: crypto.randomUUID(),
+          userId: mod.assignedDeveloperId,
+          organizationId: orgId,
+          type: "blocker_assigned" as const,
+          message: `${session.user.name} reported a blocker on your module ${mod.name}`,
+          resourceId: `/projects/${mod.projectId}/modules/${moduleId}`,
+          read: false,
+          createdAt: new Date(),
+        });
+      }
+
+      // Notify assigned developers of modules that depend on this now-blocked module.
+      // Use a seen set to deduplicate: one person assigned to multiple dependents only gets one notification.
+      const dependents = await db
+        .select({
+          assignedDeveloperId: modules.assignedDeveloperId,
+          name: modules.name,
+          projectId: modules.projectId,
+          id: modules.id,
+        })
+        .from(moduleDependencies)
+        .innerJoin(modules, eq(moduleDependencies.moduleId, modules.id))
+        .where(eq(moduleDependencies.dependsOnModuleId, moduleId));
+
+      const seen = new Set([session.user.id, mod.assignedDeveloperId]);
+      const dependentRecipients = dependents.filter((d) => {
+        if (seen.has(d.assignedDeveloperId)) return false;
+        seen.add(d.assignedDeveloperId);
+        return true;
+      });
+      if (dependentRecipients.length > 0) {
+        await db.insert(notifications).values(
+          dependentRecipients.map((d) => ({
+            id: crypto.randomUUID(),
+            userId: d.assignedDeveloperId,
+            organizationId: orgId,
+            type: "dependency_blocked" as const,
+            message: `${mod.name} (a dependency of ${d.name}) is now blocked`,
+            resourceId: `/projects/${d.projectId}/modules/${d.id}`,
+            read: false,
+            createdAt: new Date(),
+          })),
+        );
+      }
+
+      await recalculateMilestoneStatus(mod.projectId, orgId);
+    } catch (sideEffectErr) {
+      console.error("[actions/modules] reportBlocker side-effects", sideEffectErr);
+    }
+
     revalidatePath(`/projects/${mod.projectId}/modules/${moduleId}`);
     revalidatePath(`/projects/${mod.projectId}`);
     revalidatePath("/dashboard");
@@ -363,6 +447,11 @@ export async function resolveBlocker(blockerId: string): Promise<{ success: bool
     });
 
     await recalculateProjectHealth(blocker.projectId);
+    try {
+      await recalculateMilestoneStatus(blocker.projectId, orgId);
+    } catch (sideEffectErr) {
+      console.error("[actions/modules] resolveBlocker side-effects", sideEffectErr);
+    }
 
     revalidatePath(`/projects/${blocker.projectId}/modules/${blocker.moduleId}`);
     revalidatePath(`/projects/${blocker.projectId}`);
@@ -679,6 +768,7 @@ type UpdateModuleInput = {
   description: string;
   assignedDeveloperId: string;
   deadline: string;
+  milestoneId?: string | null;
 };
 
 export async function updateModule(
@@ -690,7 +780,7 @@ export async function updateModule(
   if (!CAN_MANAGE_MODULES.includes(session.user.role as (typeof CAN_MANAGE_MODULES)[number]))
     return { success: false, error: "Only owners, team leads, and project managers can edit modules." };
 
-  const { name, description, assignedDeveloperId, deadline } = input;
+  const { name, description, assignedDeveloperId, deadline, milestoneId } = input;
 
   if (!name.trim()) return { success: false, error: "Module name is required." };
   if (!description.trim()) return { success: false, error: "Description is required." };
@@ -711,7 +801,13 @@ export async function updateModule(
     if (!member) return { success: false, error: "Assigned developer is not a member of your organization." };
 
     await db.update(modules)
-      .set({ name: name.trim(), description: description.trim(), assignedDeveloperId, deadline })
+      .set({
+        name: name.trim(),
+        description: description.trim(),
+        assignedDeveloperId,
+        deadline,
+        ...(milestoneId !== undefined ? { milestoneId: milestoneId ?? null } : {}),
+      })
       .where(eq(modules.id, moduleId));
 
     await db.insert(activityLogs).values({
@@ -797,6 +893,73 @@ async function getOrgScopedModule(moduleId: string, orgId: string) {
     .innerJoin(projects, eq(modules.projectId, projects.id))
     .where(and(eq(modules.id, moduleId), eq(projects.organizationId, orgId)));
   return mod;
+}
+
+async function recalculateMilestoneStatus(projectId: string, orgId: string) {
+  const projectMilestones = await db
+    .select({ id: milestones.id, name: milestones.name, targetDate: milestones.targetDate, status: milestones.status })
+    .from(milestones)
+    .where(eq(milestones.projectId, projectId));
+
+  if (projectMilestones.length === 0) return;
+
+  const projectModules = await db
+    .select({ id: modules.id, milestoneId: modules.milestoneId, status: modules.status })
+    .from(modules)
+    .where(eq(modules.projectId, projectId));
+
+  const today = new Date().toISOString().split("T")[0];
+  let leadMembers: { userId: string }[] = [];
+
+  for (const ms of projectMilestones) {
+    const msModules = projectModules.filter((m) => m.milestoneId === ms.id);
+    const total = msModules.length;
+    const completed = msModules.filter((m) => m.status === "completed").length;
+    const openBlockers = msModules.filter((m) => m.status === "blocked").length;
+
+    const daysLeft = Math.ceil(
+      (new Date(ms.targetDate + "T00:00:00Z").getTime() - new Date(today + "T00:00:00Z").getTime()) / 86400000,
+    );
+    const allDone = total > 0 && completed === total;
+    const hasBlockers = openBlockers > 0;
+
+    let newStatus: "upcoming" | "at_risk" | "missed" | "completed";
+    if (daysLeft < 0 && !allDone) newStatus = "missed";
+    else if (allDone && !hasBlockers) newStatus = "completed";
+    else if (daysLeft <= 7 && !allDone) newStatus = "at_risk";
+    else newStatus = "upcoming";
+
+    if (newStatus === ms.status) continue;
+
+    await db.update(milestones).set({ status: newStatus }).where(eq(milestones.id, ms.id));
+
+    if (newStatus === "at_risk") {
+      if (leadMembers.length === 0) {
+        leadMembers = await db
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(and(
+            eq(organizationMembers.organizationId, orgId),
+            inArray(organizationMembers.role, ["owner", "team_lead", "project_manager"]),
+          ));
+      }
+
+      if (leadMembers.length > 0) {
+        await db.insert(notifications).values(
+          leadMembers.map((m) => ({
+            id: crypto.randomUUID(),
+            userId: m.userId,
+            organizationId: orgId,
+            type: "milestone_at_risk" as const,
+            message: `Milestone "${ms.name}" is at risk — ${daysLeft} day${daysLeft === 1 ? "" : "s"} remaining`,
+            resourceId: `/projects/${projectId}`,
+            read: false,
+            createdAt: new Date(),
+          })),
+        );
+      }
+    }
+  }
 }
 
 async function recalculateProjectHealth(projectId: string) {

@@ -21,7 +21,7 @@ type InviteRole = "developer" | "team_lead" | "project_manager";
 // full membership with no approval step, so there's no "pending" state for
 // any member to ever be in.
 type MemberStatus = "active";
-type Filter = "all" | "active";
+type Filter = "all" | "active" | "pending";
 
 type Member = {
   id: string;
@@ -68,9 +68,10 @@ const inviteRoleOptions: { value: InviteRole; label: string; description: string
   { value: "project_manager", label: "Project Manager", description: "Plan timelines, track deliverables, and coordinate teams.", icon: "◎" },
 ];
 
-const filterTabs: { value: Filter; label: string }[] = [
+const baseTabs: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
+  { value: "pending", label: "Pending" },
 ];
 
 const roleLabel: Record<MemberRole, string> = {
@@ -246,31 +247,38 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
           className="h-10 w-72 rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
         />
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-1">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => setFilter(tab.value)}
-              className={[
-                "rounded-md px-3 py-1 text-xs font-semibold transition-colors",
-                filter === tab.value
-                  ? "bg-foreground text-card"
-                  : "text-muted-foreground hover:text-foreground",
-              ].join(" ")}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {baseTabs
+            .filter((tab) => tab.value !== "pending" || canInvite)
+            .map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setFilter(tab.value)}
+                className={[
+                  "rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                  filter === tab.value
+                    ? "bg-foreground text-card"
+                    : "text-muted-foreground hover:text-foreground",
+                ].join(" ")}
+              >
+                {tab.label}
+                {tab.value === "pending" && pendingInvites.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-warning/20 px-1.5 py-0.5 font-mono text-[10px] text-warning">
+                    {pendingInvites.length}
+                  </span>
+                )}
+              </button>
+            ))}
         </div>
       </div>
 
-      {/* Members table */}
+      {/* Members / Pending invites table */}
       <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
         <table className="w-full">
           <thead>
             <tr className="border-b border-border">
               <th className="px-6 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Member
+                {filter === "pending" ? "Email" : "Member"}
               </th>
               <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Role
@@ -279,7 +287,7 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
                 Status
               </th>
               <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Joined
+                {filter === "pending" ? "Expires" : "Joined"}
               </th>
               <th className="px-6 py-3 text-right font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Actions
@@ -287,7 +295,51 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filtered.length === 0 ? (
+            {filter === "pending" ? (
+              pendingInvites.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                    No pending invites
+                  </td>
+                </tr>
+              ) : (
+                pendingInvites.map((inv) => (
+                  <tr key={inv.id} className="transition-colors hover:bg-background">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-background text-[11px] font-bold text-muted-foreground">
+                          {inv.email[0].toUpperCase()}
+                        </div>
+                        <p className="text-sm text-foreground">{inv.email}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground">
+                        {roleLabel[inv.role]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex items-center rounded-full bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning">
+                        Pending
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-muted-foreground">
+                      {formatExpiry(inv.expiresAt)}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleRevoke(inv.id, inv.email)}
+                        disabled={isPending}
+                        className="text-sm font-medium text-destructive transition-opacity hover:opacity-75 disabled:opacity-50"
+                      >
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-6 py-10 text-center text-sm text-muted-foreground">
                   No members found
@@ -358,64 +410,6 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
           </tbody>
         </table>
       </div>
-
-      {/* Pending invites — owner only */}
-      {canInvite && (
-        <div className="mt-6">
-          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Pending Invites
-          </h2>
-          {pendingInvites.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No pending invites.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="px-6 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Email
-                    </th>
-                    <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Role
-                    </th>
-                    <th className="px-4 py-3 text-left font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Expires
-                    </th>
-                    <th className="px-6 py-3 text-right font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {pendingInvites.map((inv) => (
-                    <tr key={inv.id} className="transition-colors hover:bg-background">
-                      <td className="px-6 py-4 text-sm text-foreground">{inv.email}</td>
-                      <td className="px-4 py-4">
-                        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
-                          {roleLabel[inv.role]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-muted-foreground">
-                        {formatExpiry(inv.expiresAt)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleRevoke(inv.id, inv.email)}
-                          disabled={isPending}
-                          className="text-sm font-medium text-destructive transition-opacity hover:opacity-75 disabled:opacity-50"
-                        >
-                          Revoke
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Invite modal */}
       {inviteOpen && canInvite && (
@@ -547,6 +541,7 @@ export function TeamClient({ members, stats, currentUserId, currentUserRole, inv
                 </div>
               </>
             )}
+
           </div>
         </div>
       )}

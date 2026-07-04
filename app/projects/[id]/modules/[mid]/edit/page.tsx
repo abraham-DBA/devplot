@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { projects, modules, user } from "@/lib/schema";
+import { projects, modules, user, milestones } from "@/lib/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
@@ -49,6 +49,12 @@ export default async function EditModulePage({
       ? teamUsers
       : [{ id: currentUser.id, name: currentUser.name }];
 
+  const projectMilestones = await db
+    .select({ id: milestones.id, name: milestones.name })
+    .from(milestones)
+    .where(eq(milestones.projectId, id))
+    .orderBy(milestones.targetDate);
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar userName={currentUser.name} userRole={currentUser.role ?? "developer"} />
@@ -79,7 +85,9 @@ export default async function EditModulePage({
               description: mod.description,
               assignedDeveloperId: mod.assignedDeveloperId,
               deadline: mod.deadline,
+              milestoneId: mod.milestoneId ?? null,
             }}
+            milestones={projectMilestones}
           />
         </div>
       </main>

@@ -17,6 +17,11 @@ type DeveloperOption = {
   name: string;
 };
 
+type MilestoneOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   moduleId: string;
   projectId: string;
@@ -26,10 +31,12 @@ type Props = {
     description: string;
     assignedDeveloperId: string;
     deadline: string;
+    milestoneId: string | null;
   };
+  milestones: MilestoneOption[];
 };
 
-export function EditModuleForm({ moduleId, projectId, developers, initialValues }: Props) {
+export function EditModuleForm({ moduleId, projectId, developers, initialValues, milestones }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -37,6 +44,7 @@ export function EditModuleForm({ moduleId, projectId, developers, initialValues 
   const [description, setDescription] = useState(initialValues.description);
   const [ownerId, setOwnerId] = useState(initialValues.assignedDeveloperId);
   const [deadline, setDeadline] = useState(initialValues.deadline);
+  const [milestoneId, setMilestoneId] = useState(initialValues.milestoneId ?? "");
 
   function handleSubmit() {
     startTransition(async () => {
@@ -45,6 +53,7 @@ export function EditModuleForm({ moduleId, projectId, developers, initialValues 
         description,
         assignedDeveloperId: ownerId,
         deadline,
+        milestoneId: milestoneId || null,
       });
       if (result?.error) {
         toast.error(result.error);
@@ -120,6 +129,28 @@ export function EditModuleForm({ moduleId, projectId, developers, initialValues 
             />
           </div>
         </div>
+
+        {/* Milestone assignment */}
+        {milestones.length > 0 && (
+          <div className="mt-6">
+            <label className="font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Milestone
+            </label>
+            <select
+              value={milestoneId}
+              onChange={(e) => setMilestoneId(e.target.value)}
+              disabled={isPending}
+              className="mt-2 h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary disabled:opacity-50"
+            >
+              <option value="">None</option>
+              {milestones.map((ms) => (
+                <option key={ms.id} value={ms.id}>
+                  {ms.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <p className="mt-4 text-xs text-muted-foreground">
           Status, progress, and dependencies are managed from the module detail page.

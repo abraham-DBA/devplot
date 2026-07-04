@@ -3,8 +3,8 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies } from "@/lib/schema";
-import { eq, desc, inArray, and } from "drizzle-orm";
+import { projects, modules, blockerLogs, activityLogs, user, moduleDependencies, checkIns, organizationMembers } from "@/lib/schema";
+import { eq, desc, inArray, and, sql } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth-types";
 import { Navbar } from "@/components/dashboard/Navbar";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -15,6 +15,7 @@ import { ActivityChart } from "@/components/dashboard/ActivityChart";
 import { ProjectCard } from "@/components/dashboard/ProjectCard";
 import { ModulesTable } from "@/components/dashboard/ModulesTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { CheckInDigest } from "@/components/dashboard/CheckInDigest";
 import { calculateProjectHealth } from "@/lib/health";
 import { computeAtRiskModules } from "@/lib/dependency-risk";
 
@@ -339,6 +340,27 @@ export default async function DashboardPage() {
     };
   });
 
+  // ── Check-in digest (leads/PMs/owners only) ──────────────────────────────
+
+  const canViewDigest = ["owner", "team_lead", "project_manager"].includes(currentUser.role ?? "");
+  let checkInDigest: { checkedIn: number; total: number } | null = null;
+
+  if (canViewDigest) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const [{ checkedIn }] = await db
+      .select({ checkedIn: sql<number>`count(*)::int` })
+      .from(checkIns)
+      .where(and(eq(checkIns.organizationId, orgId), eq(checkIns.date, todayStr)));
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.organizationId, orgId));
+
+    checkInDigest = { checkedIn, total };
+  }
+
   // ── Subtitle counts ───────────────────────────────────────────────────────
 
   const contributorCount = allMemberIds.length;
@@ -408,6 +430,13 @@ export default async function DashboardPage() {
             trendColor={openBlockerCount > 0 ? "destructive" : "muted"}
           />
         </div>
+
+        {/* Check-in digest — leads/PMs/owners only */}
+        {checkInDigest && (
+          <div className="mt-4">
+            <CheckInDigest digest={checkInDigest} />
+          </div>
+        )}
 
         {/* Blocker banner — only shown when blockers exist */}
         {blockerBannerItems.length > 0 && (

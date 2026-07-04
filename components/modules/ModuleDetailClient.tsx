@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateModuleProgress, addNote, approveModule, requestChanges } from "@/actions/modules";
-import type { NoteEntry } from "@/actions/modules";
+import type { NoteEntry } from "@/lib/note-types";
 import { Slider } from "@/components/ui/slider";
 import {
   Select,

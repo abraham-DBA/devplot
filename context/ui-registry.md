@@ -90,7 +90,7 @@ Auth screens use a full-height two-column split on desktop: dark testimonial/bra
 ### Dashboard — Navbar
 
 File: `components/dashboard/Navbar.tsx`
-Last updated: 2026-06-30
+Last updated: 2026-07-04
 
 | Property | Class |
 | -------- | ----- |
@@ -101,8 +101,34 @@ Last updated: 2026-06-30
 | Inactive nav link | `font-medium text-muted-foreground hover:text-foreground rounded-md px-3 py-1.5` |
 | Avatar | `size-8 rounded-full bg-foreground text-card text-[11px] font-bold` |
 | Mobile hamburger | `size-8 rounded-md text-muted-foreground md:hidden` — toggles a `border-t` drawer |
+| Bell button | `size-8 rounded-full text-muted-foreground hover:bg-background hover:text-foreground` |
 
-`navLinks` is now 5 entries: Dashboard, **My Work** (new), Projects, Team, Profile — `ui-rules.md`'s documented "three main navigation links" was already stale before this change (Team was added in an earlier phase); not corrected here, just noting the doc/code gap persists.
+`navLinks` is now 5 entries: Dashboard, **My Work** (new), Projects, Team, Profile. Right-side order: role text → `<NotificationBell />` → avatar dropdown.
+
+---
+
+### Dashboard — NotificationBell
+
+File: `components/dashboard/NotificationBell.tsx`
+Last updated: 2026-07-04
+
+| Property | Class |
+| -------- | ----- |
+| Bell trigger button | `size-8 rounded-full text-muted-foreground hover:bg-background hover:text-foreground` |
+| Unread badge | `absolute right-0.5 top-0.5 size-4 rounded-full bg-destructive text-[9px] font-bold text-card` |
+| Popover container | `absolute right-0 top-10 z-50 w-80 rounded-xl border border-border bg-card shadow-lg` |
+| Popover header | `border-b border-border px-4 py-3` — label: `font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground` |
+| Mark all read button | `text-[11px] font-medium text-brand-primary` |
+| Notification row (unread) | `bg-background` — `bg-card` when read |
+| Type dot | `size-1.5 rounded-full` — color per type: `bg-destructive` / `bg-brand-primary` / `bg-warning` |
+| Message | `text-xs leading-snug text-foreground` (unread) / `text-muted-foreground` (read) |
+| Timestamp | `font-mono text-[10px] text-muted-foreground` |
+| Action buttons (hover-reveal) | `opacity-0 group-hover:opacity-100` wrapper — icon buttons `rounded p-0.5` |
+| Loading skeleton row | `flex items-start gap-3 px-4 py-3` — animated divs: `h-3 animate-pulse rounded bg-border` |
+| Empty state icon | `size-8 text-muted-foreground opacity-40` (use `opacity-40` utility, NOT `/40` modifier — hex CSS vars don't support Tailwind v4 opacity modifiers) |
+
+**Pattern notes:**
+Fetches on mount (for badge count) and on each open (to refresh). `hasFetched` gates the skeleton — the list or empty state only renders after the first successful fetch, preventing a flash of "You're all caught up" while data loads. Optimistic updates for mark-read and dismiss both revert on server failure. `resourceId` stores the full URL path so rows are wrapped in `<Link>` when present; clicking a linked row marks it read and closes the popover.
 
 ---
 
@@ -119,6 +145,32 @@ Last updated: 2026-06-28
 | Sub | `text-xs text-muted-foreground` |
 | Trend success | `text-success text-xs font-medium` |
 | Trend destructive | `text-destructive text-xs font-medium` |
+
+---
+
+### Milestones — MilestonesSection / MilestoneCard
+
+File: `components/milestones/MilestonesSection.tsx`
+Last updated: 2026-07-04
+
+| Property | Class |
+| -------- | ----- |
+| Card container | `rounded-xl border border-border bg-card p-5 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+| Status badge — upcoming | `bg-background text-muted-foreground border-border` |
+| Status badge — at_risk | `bg-warning-light text-warning border-warning/20` |
+| Status badge — missed | `bg-destructive-light text-destructive border-destructive/20` |
+| Status badge — completed | `bg-success-light text-success border-success/20` |
+| Status badge wrapper | `flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide` |
+| Progress bar track | `h-1.5 w-full overflow-hidden rounded-full bg-background` |
+| Progress bar fill | `h-full rounded-full bg-brand-primary transition-all` |
+| Readiness check — done | `size-4 rounded-full border-success bg-success text-card text-[9px] font-bold` |
+| Readiness check — pending | `size-4 rounded-full border-border bg-background text-muted-foreground text-[9px] font-bold` |
+| Inline create form | `rounded-xl border border-border bg-card p-4 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]` |
+| Section label | `font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground` |
+| Add button | `rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background` |
+
+**Pattern notes:**
+List rendered directly from props (no `useState` wrapper) — `router.refresh()` after create/delete re-enters the RSC. Delete uses a two-click inline confirmation (`confirmingDelete` boolean state in `MilestoneCard`) — no `AlertDialog`, matching the project codebase's inline-confirmation convention. Contracts agreed and rollback owner use optimistic updates with revert on error, same `useTransition` + `toast.error` pattern as `MilestonesSection`. Milestone status is computed client-side from live module stats via `getMilestoneStatus()` (derived, not read from `milestones.status` column — column is written server-side by `recalculateMilestoneStatus` for notification triggers only).
 
 ---
 
